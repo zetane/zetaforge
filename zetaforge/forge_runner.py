@@ -243,14 +243,12 @@ def run_forge(server_version=None, client_version=None, server_path=None, client
     try:
         server = None
         client = None
-        windows_flag = False
         print(f"Launching execution server {server_path}..")
         server_executable = os.path.basename(server_path)
         if platform.system() != 'Windows':
             server_executable = f"./{server_executable}"
         else:
             server_executable = server_path
-            windows_flag = True
         
         server = subprocess.Popen([server_executable],stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=os.path.dirname(server_path))
 
