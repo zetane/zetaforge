@@ -4,6 +4,42 @@ import fs from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 
+//fix for specs.json issue
+const coreBlockDir = 'core/blocks'; 
+
+// Function to copy specs_v1.json to specs.json if specs.json doesn't exist
+export const copySpecsIfNotExists = async (dir) => {
+  const specsV1Path = path.join(dir, 'specs_v1.json');
+  const specsPath = path.join(dir, 'specs.json');
+  
+  if (await fileExists(specsV1Path) && !(await fileExists(specsPath))) {
+    const specsV1Data = await fs.readFile(specsV1Path, 'utf8');
+    await fs.writeFile(specsPath, specsV1Data);
+    console.log(`Replicated contents in ${specsV1Path} to ${specsPath}`);
+  } else {
+    console.log(`specs.json already exists in ${dir}`); //logs if specs.json already exists or specs_v1.json does not exist
+  }
+}
+
+// Function to process all processing blocks in the core block directory
+const processCoreBlockDirectory = async (coreBlockDir) => {
+  try {
+    const processingBlocks = await fs.readdir(coreBlockDir);
+    for (const block of processingBlocks) {
+      const blockPath = path.join(coreBlockDir, block);
+      const stat = await fs.stat(blockPath);
+      if (stat.isDirectory()) {
+        await copySpecsIfNotExists(blockPath);
+      }
+    }
+  } catch (error) {
+    console.error("Error processing core block directory:", error);
+  }
+}
+
+//call function to process core block directory
+processCoreBlockDirectory(coreBlockDir);
+
 // TODO: use env vars
 export const s3Upload = async (filePath) => {
   if (await fileExists(filePath)) {
