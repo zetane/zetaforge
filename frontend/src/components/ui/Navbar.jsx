@@ -19,6 +19,7 @@ import PipelineNameLabel from "./PipelineNameLabel";
 import SavePipelineButton from "./SavePipelineButton";
 import SaveAsPipelineButton from "./SaveAsPipelineButton";
 import RunPipelineButton from "./RunPipelineButton";
+import GetEndpointButton from "./GetEndpointButton";
 import LogsButton from "./LogsButton";
 import NewButton from "./NewButton";
 import ApiKeysModal from "./modal/ApiKeysModal";
@@ -153,6 +154,9 @@ export default function Navbar({ children }) {
         <RunPipelineButton modalPopper={modalPopper} action="Run">
           <Play size={20} style={svgOverride} />
         </RunPipelineButton>
+        <GetEndpointButton modalPopper={modalPopper} action="Something">
+          <Play size={20} style={svgOverride} />
+        </GetEndpointButton>
 
         <RunPipelineButton modalPopper={modalPopper} action="Rebuild">
           <Renew size={20} style={svgOverride} />
