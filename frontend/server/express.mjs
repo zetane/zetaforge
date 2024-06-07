@@ -243,6 +243,13 @@ function startExpressServer() {
 
     return fileSystem;
   };
+  
+  app.post("/launch-anvil-locally", (req, res) => {
+    console.log("RECEIVED REQUEST")
+    const config = req.body
+
+    console.log(config)
+  })
 
   app.post("/new-block-react", (req, res) => {
     const data = req.body;

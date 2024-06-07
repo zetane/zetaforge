@@ -21,6 +21,7 @@ import { useAtom } from "jotai";
 import ClosableModal from "./ClosableModal";
 import { Add, TrashCan } from "@carbon/icons-react";
 import { useState } from "react";
+import LaunchAnvilButton from "./LaunchAnvilButton";
 
 export default function AnvilConfigurationsModal() {
   const [defaultAnvilConfiguration] = useAtom(defaultAnvilConfigurationAtom);
@@ -58,6 +59,7 @@ export default function AnvilConfigurationsModal() {
           <AddRow />
         </TableBody>
       </Table>
+      <LaunchAnvilButton />
     </ClosableModal>
   );
 }
