@@ -22,9 +22,8 @@ jobs:
       with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-    - run: 
-        working-directory: ./frontend
-        shell: npm ci
+    - run: npm ci
+      working-directory: ./frontend
 
   test:
     needs: install
@@ -44,12 +43,10 @@ jobs:
       with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-    - run:
-        working-directory: ./frontend
-        bash: npm ci
-    - run:
-        working-directory: ./frontend
-        bash: npm run test
+    - run: npm ci
+      working-directory: ./frontend
+    - run: npm run test
+      working-directory: ./frontend
 
   format:
     needs: install
@@ -65,12 +62,10 @@ jobs:
       with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-    - run:
-        working-directory: ./frontend
-        bash: npm ci
-    - run:
-        working-directory: ./frontend
-        bash: npm run format
+    - run: npm ci
+      working-directory: ./frontend
+    - run: npm run format
+      working-directory: ./frontend
 
   lint:
     needs: install
@@ -86,9 +81,7 @@ jobs:
       with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-    - run:
-        working-directory: ./frontend
-        bash: npm ci
-    - run:
-        working-directory: ./frontend
-        bash: npm run lint
+    - run: npm ci
+      working-directory: ./frontend
+    - run: npm run lint
+      working-directory: ./frontend
