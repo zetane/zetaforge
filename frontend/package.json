@@ -24,7 +24,8 @@
     "pree2e": "vite build --mode=test",
     "lint": "eslint .",
     "format": "prettier --check .",
-    "test": "vitest"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@sentry/electron": "^4.22.0",
