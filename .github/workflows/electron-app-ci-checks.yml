@@ -1,0 +1,94 @@
+name: Electron App CI Checks
+
+on:
+  push:
+    branches:
+      - 'main'
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  install:
+    strategy:
+      matrix:
+        node-version: [20.x]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+    - run: 
+        working-directory: ./frontend
+        shell: npm ci
+
+  test:
+    needs: install
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+        os:
+        - "ubuntu-latest"
+        - "windows-latest"
+        - "macos-latest"
+    runs-on: ${{ matrix.os }
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+    - run:
+        working-directory: ./frontend
+        bash: npm ci
+    - run:
+        working-directory: ./frontend
+        bash: npm run test
+
+  format:
+    needs: install
+    strategy:
+      matrix:
+        node-version: [20.x]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+    - run:
+        working-directory: ./frontend
+        bash: npm ci
+    - run:
+        working-directory: ./frontend
+        bash: npm run format
+
+  lint:
+    needs: install
+    strategy:
+      matrix:
+        node-version: [20.x]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+    - run:
+        working-directory: ./frontend
+        bash: npm ci
+    - run:
+        working-directory: ./frontend
+        bash: npm run lint
