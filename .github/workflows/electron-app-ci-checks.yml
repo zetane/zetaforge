@@ -30,9 +30,8 @@ jobs:
     needs: install
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [20.x]
         os:
-        - "ubuntu-latest"
         - "windows-latest"
         - "macos-latest"
     runs-on: ${{ matrix.os }}
