@@ -22,9 +22,9 @@
     "build:linux-arm64": "tsc && vite build && electron-builder --linux --arm64 --x64",
     "preview": "vite preview",
     "pree2e": "vite build --mode=test",
-    "e2e": "playwright test",
     "lint": "eslint .",
-    "format": "prettier --check ."
+    "format": "prettier --check .",
+    "test": "vitest"
   },
   "dependencies": {
     "@sentry/electron": "^4.22.0",
@@ -56,7 +56,6 @@
     "@eslint/js": "^9.4.0",
     "@fortawesome/fontawesome-free": "^6.5.1",
     "@fortawesome/fontawesome-svg-core": "^6.5.1",
-    "@playwright/test": "^1.37.1",
     "@tanstack/react-query": "^4.36.1",
     "@trpc/react-query": "^10.45.1",
     "@types/react": "^18.2.20",
@@ -111,6 +110,7 @@
     "vite": "^5.0.10",
     "vite-plugin-electron": "^0.28.0",
     "vite-plugin-electron-renderer": "^0.14.5",
+    "vitest": "^1.6.0",
     "zod": "^3.22.4"
   }
 }
