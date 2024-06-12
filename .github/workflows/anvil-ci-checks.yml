@@ -21,7 +21,7 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: ${{ matrix.go-version }}
-    - name: Test
+    - name: test
       run: go test -v ./...
 
   format:
@@ -36,6 +36,6 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: ${{ matrix.go-version }}
-    - name: Test
+    - name: format
       run: gofmt -d -l -e .
 
