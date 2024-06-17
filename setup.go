@@ -26,7 +26,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
@@ -283,7 +282,12 @@ func migrate(ctx context.Context, resources map[string]string, config Config, cl
 	return nil
 }
 
-func setup(ctx context.Context, config Config, client clientcmd.ClientConfig, db *sql.DB) {
+func setup(ctx context.Context, config Config, db *sql.DB) {
+	client, err := kubernetesClient(config)
+	if err != nil {
+		log.Fatalf("Failed to access kubernetes; err=%v", err)
+	}
+
 	clientConfig, err := client.ClientConfig()
 	if err != nil {
 		log.Fatalf("failed to get client config; err=%v", err)
@@ -348,7 +352,11 @@ func setup(ctx context.Context, config Config, client clientcmd.ClientConfig, db
 	log.Println("Setup Successful")
 }
 
-func uninstall(ctx context.Context, client clientcmd.ClientConfig, db *sql.DB) {
+func uninstall(ctx context.Context, config Config, db *sql.DB) {
+	client, err := kubernetesClient(config)
+	if err != nil {
+		log.Fatalf("Failed to access kubernetes; err=%v", err)
+	}
 	clientConfig, err := client.ClientConfig()
 	if err != nil {
 		log.Fatalf("failed to get client config; err=%v", err)

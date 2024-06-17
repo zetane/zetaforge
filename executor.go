@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -29,7 +30,6 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/go-cmd/cmd"
-	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
@@ -658,7 +658,13 @@ func buildImage(ctx context.Context, source string, tag string, cfg Config) erro
 	}
 }
 
-func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid string, build bool, cfg Config, client clientcmd.ClientConfig, db *sql.DB, hub *Hub) {
+func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid string, build bool, cfg Config, db *sql.DB, hub *Hub) {
+	client, err := kubernetesClient(cfg)
+	if err != nil {
+		log.Printf("Failed to access kubernetes; err=%v", err)
+		return
+	}
+
 	ctx := context.Background()
 	defer log.Printf("Completed")
 
@@ -823,7 +829,13 @@ func cleanupRun(ctx context.Context, db *sql.DB, executionId int64, executionUui
 	}
 }
 
-func cloudExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid string, build bool, cfg Config, client clientcmd.ClientConfig, db *sql.DB, hub *Hub) {
+func cloudExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid string, build bool, cfg Config, db *sql.DB, hub *Hub) {
+	client, err := kubernetesClient(cfg)
+	if err != nil {
+		log.Printf("Failed to access kubernetes; err=%v", err)
+		return
+	}
+
 	ctx := context.Background()
 	defer log.Printf("Completed")
 

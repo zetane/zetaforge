@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"encoding/base64"
 	"io"
 	"log"
 	"net/http"
@@ -28,8 +27,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pressly/goose/v3"
 	"github.com/xeipuuv/gojsonschema"
-	"k8s.io/client-go/tools/clientcmd"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/getsentry/sentry-go"
 	sentrygin "github.com/getsentry/sentry-go/gin"
@@ -70,6 +69,11 @@ type Cloud struct {
 	ClusterIP    string
 	Token        string
 	CaCert       string
+
+	Provider string
+	Registry string
+	Oracle   `json:"Oracle,omitempty"`
+	AWS      `json:"AWS,omitempty"`
 }
 
 type WebSocketWriter struct {
@@ -320,57 +324,16 @@ func main() {
 		log.Fatalf("failed to migrate database; err=%v", err)
 	}
 
-	var client clientcmd.ClientConfig
-	if config.IsLocal {
-		client = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			clientcmd.NewDefaultClientConfigLoadingRules(),
-			&clientcmd.ConfigOverrides{},
-		)
-
+	if config.IsLocal || config.Cloud.IsDebug {
 		// Switching to Cobra if we need more arguments
 		if len(os.Args) > 1 {
 			if os.Args[1] == "--uninstall" {
-				uninstall(ctx, client, db)
+				uninstall(ctx, config, db)
 				return
 			}
 			os.Exit(1)
 		}
-		setup(ctx, config, client, db)
-	} else if config.Cloud.IsDebug {
-		client = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			clientcmd.NewDefaultClientConfigLoadingRules(),
-			&clientcmd.ConfigOverrides{},
-		)
-
-		// Switching to Cobra if we need more arguments
-		if len(os.Args) > 1 {
-			if os.Args[1] == "--uninstall" {
-				uninstall(ctx, client, db)
-				return
-			}
-			os.Exit(1)
-		}
-	} else {
-		cacert, err := base64.StdEncoding.DecodeString(config.Cloud.CaCert)
-		if err != nil {
-			log.Fatalf("invalid CA certificate; err=%v", err)
-		}
-
-		cfg := clientcmdapi.NewConfig()
-		cfg.Clusters["zetacluster"] = &clientcmdapi.Cluster{
-			Server:                   "https://" + config.Cloud.ClusterIP,
-			CertificateAuthorityData: cacert,
-		}
-		cfg.AuthInfos["zetaauth"] = &clientcmdapi.AuthInfo{
-			Token: config.Cloud.Token,
-		}
-		cfg.Contexts["zetacontext"] = &clientcmdapi.Context{
-			Cluster:  "zetacluster",
-			AuthInfo: "zetaauth",
-		}
-		cfg.CurrentContext = "zetacontext"
-
-		client = clientcmd.NewDefaultClientConfig(*cfg, &clientcmd.ConfigOverrides{})
+		setup(ctx, config, db)
 	}
 
 	hub := newHub()
@@ -395,6 +358,25 @@ func main() {
 	router.Use(sentrygin.New(sentrygin.Options{}))
 
 	router.GET("/ping", func(ctx *gin.Context) {
+		client, err := kubernetesClient(config)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		clientConfig, err := client.ClientConfig()
+		if err != nil {
+			log.Printf("Failed to get client config; err=%v", err)
+			return
+		}
+
+		clientset, err := kubernetes.NewForConfig(clientConfig)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		res, err := clientset.CoreV1().Pods("default").List(context.TODO(), metav1.ListOptions{})
+		log.Println(res, err)
 		ctx.String(http.StatusOK, "pong")
 	})
 	router.POST("/execute", func(ctx *gin.Context) {
@@ -419,9 +401,9 @@ func main() {
 			return
 		}
 		if config.IsLocal || config.Cloud.IsDebug {
-			go localExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, client, db, hub)
+			go localExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, db, hub)
 		} else {
-			go cloudExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, client, db, hub)
+			go cloudExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, db, hub)
 		}
 
 		retData, err := filterPipeline(ctx, db, execution.Id)
@@ -757,9 +739,9 @@ func main() {
 		}
 
 		if config.IsLocal || config.Cloud.IsDebug {
-			go localExecute(&pipeline, res.ID, executionId.String(), false, config, client, db, hub)
+			go localExecute(&pipeline, res.ID, executionId.String(), false, config, db, hub)
 		} else {
-			go cloudExecute(&pipeline, newExecution.ID, executionId.String(), false, config, client, db, hub)
+			go cloudExecute(&pipeline, newExecution.ID, executionId.String(), false, config, db, hub)
 		}
 
 		newRes := make(map[string]any)
