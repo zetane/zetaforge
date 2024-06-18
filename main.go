@@ -1,17 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"database/sql"
 	"embed"
 	"encoding/base64"
-	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/invopop/jsonschema"
+	jsoniter "github.com/json-iterator/go"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pressly/goose/v3"
 	"github.com/xeipuuv/gojsonschema"
@@ -69,29 +71,171 @@ type Cloud struct {
 }
 
 type WebSocketWriter struct {
-	PipelineId  string
+	Id          string
 	MessageFunc func(string, string)
 	// Add other fields as needed
 }
 
 func (w *WebSocketWriter) Write(p []byte) (n int, err error) {
 	message := string(p)
-	w.MessageFunc(message, w.PipelineId)
+	w.MessageFunc(message, w.Id)
 	return len(p), nil
 }
 
-func createLogger(pipelineId string, file io.Writer, messageFunc func(string, string)) io.Writer {
+func createLogger(id string, file io.Writer, messageFunc func(string, string)) io.Writer {
 	wsWriter := &WebSocketWriter{
-		PipelineId:  pipelineId,
+		Id:          id,
 		MessageFunc: messageFunc,
 	}
 
-	return io.MultiWriter(os.Stdout, wsWriter, file)
+	return io.MultiWriter(os.Stdout, wsWriter)
+}
+
+func readTempLog(tempLog string) ([]string, error) {
+	if _, err := os.Stat(tempLog); os.IsNotExist(err) {
+		return []string{}, nil
+	}
+
+	file, err := os.Open(tempLog)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	var logData []string
+	for scanner.Scan() {
+		logData = append(logData, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return logData, nil
+}
+
+func initialize(obj interface{}) interface{} {
+	v := reflect.ValueOf(obj)
+	if v.Kind() != reflect.Ptr {
+		panic("niltoempty: expected pointer")
+	}
+
+	initializeNils(v, map[uintptr]bool{})
+
+	return obj
+}
+
+func initializeNils(v reflect.Value, visited map[uintptr]bool) {
+	if checkVisited(v, visited) {
+		return
+	}
+
+	switch v.Kind() {
+	case reflect.Pointer:
+		if !v.IsNil() {
+			initializeNils(v.Elem(), visited)
+		}
+	case reflect.Slice:
+		// Initialize a nil slice.
+		if v.IsNil() {
+			v.Set(reflect.MakeSlice(v.Type(), 0, 0))
+			break
+		}
+
+		// Recursively iterate over slice items.
+		for i := 0; i < v.Len(); i++ {
+			item := v.Index(i)
+			initializeNils(item, visited)
+		}
+
+	case reflect.Map:
+		// Initialize a nil map.
+		if v.IsNil() {
+			v.Set(reflect.MakeMap(v.Type()))
+			break
+		}
+
+		// Recursively iterate over map items.
+		iter := v.MapRange()
+		for iter.Next() {
+			// Map element (value) can't be set directly.
+			// we have to alloc addressable replacement for it
+			elemType := iter.Value().Type()
+			subv := reflect.New(elemType).Elem()
+
+			// copy its original value
+			subv.Set(iter.Value())
+
+			// replace nil slices and maps inside
+			initializeNils(subv, visited)
+
+			// and set the replacement back in map
+			v.SetMapIndex(iter.Key(), subv)
+		}
+
+	case reflect.Interface:
+		// Dereference interface{}.
+		if v.IsNil() {
+			break
+		}
+
+		valueUnderInterface := reflect.ValueOf(v.Interface())
+		elemType := valueUnderInterface.Type()
+		subv := reflect.New(elemType).Elem()
+		subv.Set(valueUnderInterface)
+
+		initializeNils(subv, visited)
+
+		v.Set(subv)
+
+	// Recursively iterate over array elements.
+	case reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			elem := v.Index(i)
+			initializeNils(elem, visited)
+		}
+
+	// Recursively iterate over struct fields.
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Field(i)
+			initializeNils(field, visited)
+		}
+	}
+
+}
+
+func checkVisited(v reflect.Value, visited map[uintptr]bool) bool {
+	kind := v.Kind()
+	if kind == reflect.Map || kind == reflect.Ptr || kind == reflect.Slice {
+		if v.IsNil() {
+			return false
+		}
+		p := v.Pointer()
+		wasVisited := visited[p]
+		visited[p] = true
+		return wasVisited
+	}
+	return false
+}
+
+var json jsoniter.API
+
+func init() {
+	json = jsoniter.Config{
+		SortMapKeys: false,
+	}.Froze()
 }
 
 func validateJson[D any](body io.ReadCloser) (D, HTTPError) {
 	var data D
-	schema, err := json.Marshal(jsonschema.Reflect(data))
+	r := jsonschema.Reflector{
+		RequiredFromJSONSchemaTags: true,
+		AllowAdditionalProperties:  false,
+		ExpandedStruct:             true,
+	}
+	schema, err := json.Marshal(r.Reflect(data))
 
 	if err != nil { // Should never happen outside of development
 		return data, InternalServerError{err.Error()}
@@ -114,8 +258,12 @@ func validateJson[D any](body io.ReadCloser) (D, HTTPError) {
 			listError = append(listError, error.String())
 		}
 		stringError := strings.Join(listError, "\n")
-		return data, BadRequest{stringError}
+		return data, InternalServerError{stringError}
 	}
+
+	json := jsoniter.Config{
+		SortMapKeys: false,
+	}.Froze()
 
 	if err := json.Unmarshal(buffer.Bytes(), &data); err != nil {
 		return data, InternalServerError{err.Error()}
@@ -244,20 +392,40 @@ func main() {
 			return
 		}
 
-		// TODO: client needs to handle file uploading to S3
-		// along with handling results files
+		// TODO: client needs to handle results files
 		sink := filepath.Join(execution.Pipeline.Sink, "history", execution.Id)
 		execution.Pipeline.Sink = sink
-		if config.IsLocal {
-			go localExecute(&execution.Pipeline, res.ID, execution.Id, execution.Build, config, client, db, hub)
-		} else {
-			go cloudExecute(&execution.Pipeline, res.ID, execution.Id, execution.Build, config, client, db, hub)
+		newExecution, err := createExecution(ctx, db, res.ID, execution.Id)
+
+		if err != nil {
+			log.Printf("Failed to write execution to database; err=%v", err)
+			ctx.String(err.Status(), err.Error())
+			return
 		}
-		newRes := make(map[string]any)
-		newRes["executionId"] = execution.Id
-		newRes["history"] = sink
-		newRes["pipeline"] = res
-		ctx.JSON(http.StatusCreated, newRes)
+
+		if config.IsLocal {
+			go localExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, client, db, hub)
+		} else {
+			go cloudExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, client, db, hub)
+		}
+
+		retData, err := filterPipeline(ctx, db, execution.Id)
+		if err != nil {
+			log.Printf("Failed to get pipeline record; err=%v", err)
+			ctx.String(err.Status(), err.Error())
+			return
+		}
+		response, err := newResponsePipelineExecution(retData, []string{})
+		if err != nil {
+			log.Printf("Failed to create response payload; err=%v", err)
+			ctx.String(err.Status(), err.Error())
+			return
+		}
+		ctx.JSON(http.StatusCreated, response)
+	})
+	router.GET("/rooms", func(ctx *gin.Context) {
+		rooms := hub.GetRooms()
+		ctx.JSON(http.StatusOK, rooms)
 	})
 	router.GET("/ws/:room", func(ctx *gin.Context) {
 		room := ctx.Param("room")
@@ -283,6 +451,62 @@ func main() {
 			ctx.String(err.Status(), err.Error())
 		}
 	})
+	execution := router.Group("/execution")
+	execution.GET("/running", func(ctx *gin.Context) {
+		res, err := listRunningExecutions(ctx.Request.Context(), db)
+
+		if err != nil {
+			log.Printf("Failed to get running executions; err=%v", err)
+			ctx.String(err.Status(), err.Error())
+			return
+		}
+
+		var response []ResponseExecution
+		for _, execution := range res {
+			response = append(response, newResponseExecutionsRow(execution))
+		}
+
+		ctx.JSON(http.StatusOK, response)
+	})
+	execution.GET("/:executionId/log", func(ctx *gin.Context) {
+		executionId := ctx.Param("executionId")
+		res, err := getExecutionById(ctx.Request.Context(), db, executionId)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve execution"})
+			return
+		}
+
+		tempLog := filepath.Join(os.TempDir(), executionId+".log")
+		if res.Status == "Running" {
+			logData, err := readTempLog(tempLog)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read temporary log"})
+				return
+			}
+			ctx.JSON(http.StatusOK, logData)
+		} else {
+			ctx.JSON(http.StatusOK, []string{})
+		}
+	})
+	execution.POST("/:executionId/terminate", func(ctx *gin.Context) {
+		executionId := ctx.Param("executionId")
+		res, err := getExecutionById(ctx.Request.Context(), db, executionId)
+
+		if err != nil {
+			log.Printf("Failed to get execution; err=%v", err)
+			ctx.String(err.Status(), err.Error())
+			return
+		}
+
+		argoErr := terminateArgo(ctx, client, db, res.Workflow.String, res.ID)
+		if argoErr != nil {
+			ctx.String(500, fmt.Sprintf("%v", argoErr))
+			return
+		}
+		response := newResponseExecutionsRow(res)
+
+		ctx.JSON(http.StatusOK, response)
+	})
 
 	pipeline := router.Group("/pipeline")
 	pipeline.POST("", func(ctx *gin.Context) {
@@ -300,7 +524,13 @@ func main() {
 			return
 		}
 
-		ctx.JSON(http.StatusCreated, newResponsePipeline(res))
+		response, err := newResponsePipeline(res)
+		if err != nil {
+			ctx.String(err.Status(), err.Error())
+			return
+		}
+
+		ctx.JSON(http.StatusCreated, response)
 	})
 	pipeline.GET("/list", func(ctx *gin.Context) {
 		res, err := listAllPipelines(ctx.Request.Context(), db, "org")
@@ -313,7 +543,69 @@ func main() {
 
 		var response []ResponsePipeline
 		for _, pipeline := range res {
-			response = append(response, newResponsePipeline(pipeline))
+			newRes, err := newResponsePipeline(pipeline)
+			if err != nil {
+				ctx.String(err.Status(), err.Error())
+				return
+			}
+			response = append(response, newRes)
+		}
+
+		ctx.JSON(http.StatusOK, response)
+	})
+	pipeline.GET("/filter", func(ctx *gin.Context) {
+		// TODO: Figure out how to get SQLC to emit the same struct for two different queries
+		limitStr := ctx.DefaultQuery("limit", "0")
+		offsetStr := ctx.DefaultQuery("offset", "0")
+
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			log.Printf("Invalid limit parameter: %s", limitStr)
+			ctx.String(http.StatusBadRequest, "Invalid limit parameter")
+			return
+		}
+
+		offset, err := strconv.Atoi(offsetStr)
+		if err != nil {
+			log.Printf("Invalid offset parameter: %s", offsetStr)
+			ctx.String(http.StatusBadRequest, "Invalid offset parameter")
+			return
+		}
+
+		res, httpErr := filterPipelines(ctx, db, int64(limit), int64(offset))
+		if httpErr != nil {
+			log.Printf("Failed to get filter pipelines; err=%v", err)
+			ctx.String(httpErr.Status(), err.Error())
+			return
+		}
+
+		var response []ResponsePipelineExecution
+		for _, execution := range res {
+			logOutput := []string{}
+			tempLog := filepath.Join(os.TempDir(), execution.Executionid+".log")
+			var s3key string
+			if execution.Status == "Running" {
+				logOutput, err = readTempLog(tempLog)
+				if err != nil {
+					fmt.Printf("Failed to retrieve writing log; err=%v", err)
+				}
+			} else if execution.Status != "Pending" {
+				s3key = execution.Uuid + "/" + execution.Executionid + "/" + execution.Executionid + ".log"
+				/*err = downloadFile(ctx, s3key, tempLog, config)
+				if err != nil {
+					//fmt.Printf("Failed to retrieve s3 log; err=%v", err)
+				}
+				logOutput, err = readTempLog(tempLog)
+				if err != nil {
+					fmt.Printf("Failed to read s3 log; err=%v\n", err)
+				}
+				*/
+			}
+			newRes, err := newResponsePipelinesExecution(execution, logOutput, s3key)
+			if err != nil {
+				ctx.String(err.Status(), err.Error())
+			}
+			response = append(response, newRes)
 		}
 
 		ctx.JSON(http.StatusOK, response)
@@ -393,12 +685,28 @@ func main() {
 
 		ctx.JSON(http.StatusOK, response)
 	})
+	pipeline.POST("/:uuid/:hash/stop", func(ctx *gin.Context) {
+		paramUuid := ctx.Param("uuid")
+		hash := ctx.Param("hash")
+		res, err := getPipeline(ctx.Request.Context(), db, "org", paramUuid, hash)
+		if err != nil {
+			log.Printf("Failed to get pipeline; err=%v", err)
+			ctx.String(err.Status(), err.Error())
+			return
+		}
+		argoErr := stopArgo(ctx, res.Uuid, client)
+		if argoErr != nil {
+			ctx.String(500, fmt.Sprintf("%v", argoErr))
+			return
+		}
+		ctx.Status(http.StatusOK)
+	})
 	pipeline.POST("/:uuid/:hash/execute", func(ctx *gin.Context) {
 		paramUuid := ctx.Param("uuid")
 		hash := ctx.Param("hash")
 		res, err := getPipeline(ctx.Request.Context(), db, "org", paramUuid, hash)
 		if err != nil {
-			log.Printf("Failed to execute pipeline; err=%v", err)
+			log.Printf("Failed to get pipeline; err=%v", err)
 			ctx.String(err.Status(), err.Error())
 			return
 		}
@@ -413,6 +721,7 @@ func main() {
 		if uuidErr != nil {
 			log.Printf("uuid generation failed; err=%v", uuidErr)
 			ctx.String(500, fmt.Sprintf("%v", uuidErr))
+			return
 		}
 
 		// TODO: client needs to handle file uploading to S3
@@ -420,10 +729,18 @@ func main() {
 		sink := filepath.Join(pipeline.Sink, "history", executionId.String())
 		pipeline.Sink = sink
 
+		newExecution, err := createExecution(ctx, db, res.ID, executionId.String())
+
+		if err != nil {
+			log.Printf("Failed to write execution to database; err=%v", err)
+			ctx.String(err.Status(), err.Error())
+			return
+		}
+
 		if config.IsLocal {
-			go localExecute(&pipeline, res.ID, executionId.String(), false, config, client, db, hub)
+			go localExecute(&pipeline, newExecution.ID, executionId.String(), false, config, client, db, hub)
 		} else {
-			go cloudExecute(&pipeline, res.ID, executionId.String(), false, config, client, db, hub)
+			go cloudExecute(&pipeline, newExecution.ID, executionId.String(), false, config, client, db, hub)
 		}
 
 		newRes := make(map[string]any)

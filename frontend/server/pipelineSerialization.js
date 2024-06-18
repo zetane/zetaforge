@@ -9,7 +9,7 @@ import {
   filterDirectories,
   readJsonToObject,
 } from "./fileSystem.js";
-import { checkAndUpload } from "./s3.js";
+import { checkAndUpload, checkAndCopy } from "./s3.js";
 
 export async function saveSpec(spec, writePath) {
   const pipelineSpecsPath = path.join(writePath, PIPELINE_SPECS_FILE_NAME)
@@ -62,7 +62,7 @@ export async function copyPipeline(pipelineSpecs, fromDir, toDir) {
     const blockSpec = pipelineSpecs.pipeline[key]
     if (!existingBlockPath) {
       // NOTE: BAD KEY
-      // At a certain point we serialized non unique keys 
+      // At a certain point we serialized non unique keys
       // for folder names so there's a chance that we will
       // fail to find the correct key and need to fall back
       // to fetching a common folder name
@@ -178,7 +178,7 @@ export async function uploadBlocks(pipelineId, executionId, pipelineSpecs, buffe
       for (const paramKey in parameters) {
         const param = parameters[paramKey];
 
-        if (param.type === "file") {
+        if (param.type === "file" || param.type == "fileLoad") {
           const filePath = param.value;
           const fileName = path.basename(filePath);
           const awsKey = `${pipelineId}/${executionId}/${fileName}`;
@@ -186,7 +186,15 @@ export async function uploadBlocks(pipelineId, executionId, pipelineSpecs, buffe
           if (filePath && filePath.trim()) {
             await checkAndUpload(awsKey, filePath, anvilConfiguration);
             param.value = `"${fileName}"`;
+            param.type = "blob"
           }
+        } else if (param.type == "blob") {
+          const copyKey = param.value
+          const fileName = param.value.split("/").at(-1)
+          const newAwsKey = `${pipelineId}/${executionId}/${fileName}`
+
+          await checkAndCopy(newAwsKey, copyKey, anvilConfiguration)
+          param.value = `"${fileName}"`;
         }
       }
     } else if (container) {

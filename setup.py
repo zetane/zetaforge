@@ -3,9 +3,6 @@ import os
 
 from setuptools import find_packages, setup
 
-version = {}
-with open("zetaforge/__init__.py") as fp:
-    exec(fp.read(), version)
 
 def get_package_version():
     # Specify the path to the package.json file

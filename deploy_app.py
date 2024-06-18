@@ -51,20 +51,20 @@ def upload_to_s3(file_path, object_key):
 def get_package_version():
     # Specify the path to the package.json file
     package_json_path = os.path.join(os.path.dirname(__file__), 'frontend', 'package.json')
-    
+
     try:
         # Read the contents of package.json
         with open(package_json_path, 'r') as file:
             package_data = json.load(file)
-        
+
         # Extract the version from the package data
         version = package_data.get('version')
-        
+
         if version:
             return version
         else:
             raise ValueError("Version not found in package.json")
-    
+
     except FileNotFoundError:
         raise FileNotFoundError("package.json not found")
     except json.JSONDecodeError:
@@ -76,8 +76,8 @@ def main():
     parser.add_argument("--arch", nargs="+", default=['amd64', 'arm64'], help="Specify architecture (options: arm64, amd64)")
     parser.add_argument("--platform", nargs="+", default=['darwin', 'linux', 'windows'], help="Specify platform.  If not specified, it builts for every platform (options: darwin, linux, windows)")
     args = parser.parse_args()
-    
-    
+
+
     os_list = args.platform
     version = get_package_version()
     frontend = os.path.join("frontend", "server2")
@@ -87,13 +87,13 @@ def main():
     for os_ in os_list:
         print(f"Compiling {version} for {os_}..")
         for goarch in args.arch:
-            if goarch == 'arm64' and (os_ == 'windows' or os_ == 'linux'):
+            if goarch == 'arm64' and (os_ == 'windows'):
                 continue
             compile_app(version, os_, goarch)
             upload_file = get_download_file(version, os_, goarch)
             upload_to_s3(os.path.join('frontend', 'release', version, upload_file), upload_file)
-    
-    
+
+
 def compile_app(version, goos, goarch):
     print(f"Compiling {goarch}..")
 
@@ -105,12 +105,17 @@ def compile_app(version, goos, goarch):
         arch = goarch
         if goos == 'windows':
             arch = 'amd64'
-            s = subprocess.run(["env", f"GOOS={goos}", f"GOARCH={arch}", "CGO_ENABLED=1", "CC=x86_64-w64-mingw32-gcc", "go", "build"], capture_output=True, text=True)
+            cc = 'zig cc -target x86_64-windows-gnu'
+            s = subprocess.run(["env", f"GOOS={goos}", f"GOARCH={arch}", "CGO_ENABLED=1", f"CC={cc}", "go", "build"], capture_output=True, text=True)
             if s.returncode != 0:
                 raise Exception(f"Failed to build go server: {s.stderr}")
             print(s)
         elif goos == 'linux':
-            s = subprocess.run(["env", f"GOOS={goos}", f"GOARCH={arch}", "CGO_ENABLED=1", "CC=x86_64-linux-musl-gcc", "go", "build", "-trimpath", "-ldflags", "-extldflags -static"], capture_output=True, text=True)
+            if arch == 'amd64':
+                cc = 'zig cc -target x86_64-linux-gnu'
+            else:
+                cc = "zig cc -target aarch64-linux-gnu"
+            s = subprocess.run(["env", f"GOOS={goos}", f"GOARCH={arch}", "CGO_ENABLED=1", f"CC={cc}", "go", "build", "-trimpath", "-ldflags", "-extldflags -static"], capture_output=True, text=True)
             if s.returncode != 0:
                 raise Exception(f"Failed to build go server: {s.stderr}")
             print(s)
@@ -131,7 +136,7 @@ def compile_app(version, goos, goarch):
         server += ".exe"
     else:
         filename += f'-{goarch}'
-    
+
     dest = os.path.join(frontend, filename)
     print(f"Compiled go server {server}, moving to {dest}")
     os.rename(server, dest)
@@ -143,7 +148,7 @@ def compile_app(version, goos, goarch):
         res = subprocess.Popen(["npm" , "run", f"build:{goos}"], cwd="frontend", stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     else:
         res = subprocess.Popen(["npm" , "run", f"build:{goos}-{goarch}"], cwd="frontend", stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    
+
     def read_output(process, name):
         for line in process.stdout:
             print(f"{name}: {line.decode('utf-8')}", end='')
@@ -161,7 +166,7 @@ def compile_app(version, goos, goarch):
 
     npm_stdout_thread.join()
     npm_stderr_thread.join()
-    
+
 
 if __name__ == '__main__':
     main()

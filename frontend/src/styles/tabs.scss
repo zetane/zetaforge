@@ -1,0 +1,20 @@
+.tab-bar {
+    height: 2.06rem;
+    width: 100%;
+    background-color: var(--cds-background);
+    border-top: 1px solid var(--cds-border-subtle);
+    border-bottom: 1px solid var(--cds-border-subtle);
+
+    .cds--tabs .cds--tab--list {
+        block-size: 2rem;
+    }
+
+    .cds--tabs .cds--tabs__nav-link {
+        border-right: 1px solid var(--cds-border-subtle);
+        border-bottom: 1px solid var(--cds-border-subtle);
+    }
+
+    .cds--tabs.cds--tabs--contained .cds--tabs__nav-item.cds--tabs__nav-item--selected {
+        height: 2.2rem;
+    }
+}

@@ -193,11 +193,11 @@ header a {
 
 #drawflow {
 	position: relative;
-	width: calc(100% - 3rem);
-	height: calc(100dvh - 3rem);
+	width: 100%;
+	height: calc(100dvh - 4.9rem);
 	/* background: var(--background-color); */
 	background-size: 25px 25px;
-	margin-left: auto;
+	margin-top: 4.9rem;
 	/* background-image:
    linear-gradient(to right, #f1f1f1 1px, transparent 1px),
    linear-gradient(to bottom, #f1f1f1 1px, transparent 1px); */
@@ -319,7 +319,7 @@ header a {
 .drawflow-node .block-input {
 	display: flex;
 	flex-direction: row;
-	justify-content: left; 
+	justify-content: left;
 	align-items: center;
 	position: relative;
 	left: -10px;
@@ -328,7 +328,7 @@ header a {
 .drawflow-node .block-output {
 	display: flex;
 	flex-direction: row;
-	justify-content: right; 
+	justify-content: right;
 	align-items: center;
 	position: relative;
 	right: -10px;

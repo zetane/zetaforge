@@ -14,6 +14,7 @@
 @import './drawflows.scss';
 @import './library.scss';
 @import './block-editor.scss';
+@import './tabs.scss';
 
 @tailwind base;
 @tailwind components;
@@ -65,6 +66,7 @@ main {
 .cds--side-nav {
 	max-inline-size: 30rem !important;
 	overflow: visible !important;
+	margin-top: 2rem;
 }
 
 .cds--side-nav--expanded {

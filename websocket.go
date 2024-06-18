@@ -125,6 +125,16 @@ func (hub *Hub) Run() {
 	}
 }
 
+func (hub *Hub) GetRooms() []string {
+	roomLen := len(hub.Clients)
+	var rooms = make([]string, 0, roomLen)
+	for room := range hub.Clients {
+		rooms = append(rooms, room)
+	}
+
+	return rooms
+}
+
 func (hub *Hub) OpenRoom(room string) error {
 	if _, ok := hub.Clients[room]; ok {
 		return errors.New("Pipeline already exists")

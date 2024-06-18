@@ -51,14 +51,15 @@ type Preview struct {
 }
 
 type Node struct {
-	Active   string   `json:"active"`
-	TitleBar TitleBar `json:"title_bar"`
-	Preview  Preview  `json:"preview"`
-	Html     string   `json:"html"`
-	PosX     string   `json:"pos_x"`
-	PosY     string   `json:"pos_y"`
-	PosZ     string   `json:"pos_z"`
-	Behavior string   `json:"behavior,omitempty"`
+	Active   string              `json:"active"`
+	TitleBar TitleBar            `json:"title_bar"`
+	Preview  Preview             `json:"preview"`
+	Html     string              `json:"html"`
+	PosX     string              `json:"pos_x"`
+	PosY     string              `json:"pos_y"`
+	PosZ     string              `json:"pos_z"`
+	Behavior string              `json:"behavior,omitempty"`
+	Order    map[string][]string `json:"order,omitempty"`
 }
 
 type Views struct {

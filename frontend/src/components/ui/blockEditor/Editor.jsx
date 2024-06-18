@@ -54,7 +54,7 @@ export default function Editor({blockKey, blockPath}) {
         </div>
       </div>
       <Tabs>
-        <TabList fullWidth className='shrink-0 max-w-[40rem] mx-auto mb-1'>
+        <TabList fullWidth className='shrink-0 max-w-[40rem] mx-auto' aria-label='Editor tabs mb-1'>
           <Tab>
             Files
           </Tab>

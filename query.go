@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha1"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 
@@ -23,15 +22,21 @@ type ResponsePipeline struct {
 	Deployed     int64
 }
 
-func newResponsePipeline(pipeline zdatabase.Pipeline) ResponsePipeline {
-	return ResponsePipeline{
-		Organization: pipeline.Organization,
-		Created:      pipeline.Created,
-		Uuid:         pipeline.Uuid,
-		Hash:         pipeline.Hash,
-		Json:         pipeline.Json,
-		Deployed:     pipeline.Deployed,
-	}
+type ResponsePipelineExecution struct {
+	Organization  string
+	Created       int64
+	ExecutionTime int64
+	Uuid          string
+	Hash          string
+	PipelineJson  string
+	Deployed      int64
+	Status        interface{}
+	Completed     int64
+	Workflow      string
+	Execution     string
+	Log           []string
+	LogPath       string
+	Results       string
 }
 
 type ResponseExecution struct {
@@ -40,6 +45,91 @@ type ResponseExecution struct {
 	Created   int64
 	Completed int64
 	Json      string
+	Workflow  string
+	Execution string
+}
+
+func newResponsePipeline(pipeline zdatabase.Pipeline) (ResponsePipeline, HTTPError) {
+	var data zjson.Pipeline
+	if err := json.Unmarshal([]byte(pipeline.Json), &data); err != nil {
+		return ResponsePipeline{}, InternalServerError{err.Error()}
+	}
+	jsonData, err := json.Marshal(initialize(&data))
+	if err != nil {
+		return ResponsePipeline{}, InternalServerError{err.Error()}
+	}
+
+	return ResponsePipeline{
+		Organization: pipeline.Organization,
+		Created:      pipeline.Created,
+		Uuid:         pipeline.Uuid,
+		Hash:         pipeline.Hash,
+		Json:         string(jsonData),
+		Deployed:     pipeline.Deployed,
+	}, nil
+}
+
+// Note the duplication here is because sqlc does not support
+// generating the same struct from a join, so there are two identical
+// structs with slightly different names
+// see: https://github.com/sqlc-dev/sqlc/issues/781
+func newResponsePipelineExecution(filterPipeline zdatabase.FilterPipelineRow, execLog []string) (ResponsePipelineExecution, HTTPError) {
+	var data zjson.Pipeline
+	if err := json.Unmarshal([]byte(filterPipeline.Json), &data); err != nil {
+		return ResponsePipelineExecution{}, InternalServerError{err.Error()}
+	}
+	jsonData, err := json.Marshal(initialize(&data))
+	if err != nil {
+		return ResponsePipelineExecution{}, InternalServerError{err.Error()}
+	}
+
+	return ResponsePipelineExecution{
+		Organization:  filterPipeline.Organization,
+		Created:       filterPipeline.Created,
+		ExecutionTime: filterPipeline.Created_2,
+		Uuid:          filterPipeline.Uuid,
+		Hash:          filterPipeline.Hash,
+		PipelineJson:  string(jsonData),
+		Deployed:      filterPipeline.Deployed,
+		Status:        filterPipeline.Status,
+		Completed:     filterPipeline.Completed.Int64,
+		Workflow:      filterPipeline.Workflow.String,
+		Execution:     filterPipeline.Executionid,
+		Log:           execLog,
+		Results:       filterPipeline.Results.String,
+	}, nil
+}
+
+// Note the duplication here is because sqlc does not support
+// generating the same struct from a join, so there are two identical
+// structs with slightly different names
+// see: https://github.com/sqlc-dev/sqlc/issues/781
+func newResponsePipelinesExecution(filterPipeline zdatabase.FilterPipelinesRow, execLog []string, s3key string) (ResponsePipelineExecution, HTTPError) {
+	var data zjson.Pipeline
+	if err := json.Unmarshal([]byte(filterPipeline.Json), &data); err != nil {
+		return ResponsePipelineExecution{}, InternalServerError{err.Error()}
+	}
+	jsonData, err := json.Marshal(initialize(&data))
+	if err != nil {
+		return ResponsePipelineExecution{}, InternalServerError{err.Error()}
+	}
+
+	return ResponsePipelineExecution{
+		Organization:  filterPipeline.Organization,
+		Created:       filterPipeline.Created,
+		ExecutionTime: filterPipeline.Created_2,
+		Uuid:          filterPipeline.Uuid,
+		Hash:          filterPipeline.Hash,
+		PipelineJson:  string(jsonData),
+		Deployed:      filterPipeline.Deployed,
+		Status:        filterPipeline.Status,
+		Completed:     filterPipeline.Completed.Int64,
+		Workflow:      filterPipeline.Workflow.String,
+		Execution:     filterPipeline.Executionid,
+		Log:           execLog,
+		LogPath:       s3key,
+		Results:       filterPipeline.Results.String,
+	}, nil
 }
 
 func newResponseExecution(execution zdatabase.Execution, hash string) ResponseExecution {
@@ -78,12 +168,28 @@ func newResponseExecutionRow(execution zdatabase.ListExecutionsRow) ResponseExec
 	return response
 }
 
+func newResponseExecutionsRow(execution zdatabase.Execution) ResponseExecution {
+	response := ResponseExecution{
+		Status:    execution.Status.(string),
+		Created:   execution.Created,
+		Workflow:  execution.Workflow.String,
+		Execution: execution.Executionid,
+	}
+	if execution.Completed.Valid {
+		response.Completed = execution.Completed.Int64
+	}
+
+	if execution.Json.Valid {
+		response.Json = execution.Json.String
+	}
+	return response
+}
+
 func createPipeline(ctx context.Context, db *sql.DB, organization string, pipeline zjson.Pipeline) (zdatabase.Pipeline, HTTPError) {
-	jsonData, err := json.Marshal(pipeline)
+	jsonData, err := json.Marshal(initialize(&pipeline))
 	if err != nil {
 		return zdatabase.Pipeline{}, InternalServerError{err.Error()}
 	}
-
 	hash := fmt.Sprintf("%x", sha1.Sum([]byte(jsonData)))
 
 	tx, err := db.Begin()
@@ -132,6 +238,36 @@ func softDeletePipeline(ctx context.Context, db *sql.DB, organization string, uu
 	}
 
 	return nil
+}
+
+func filterPipeline(ctx context.Context, db *sql.DB, executionid string) (zdatabase.FilterPipelineRow, HTTPError) {
+	q := zdatabase.New(db)
+	res, err := q.FilterPipeline(ctx, executionid)
+	if err != nil {
+		return zdatabase.FilterPipelineRow{}, InternalServerError{err.Error()}
+	}
+	return res, nil
+}
+
+func filterPipelines(ctx context.Context, db *sql.DB, limit int64, offset int64) ([]zdatabase.FilterPipelinesRow, HTTPError) {
+	q := zdatabase.New(db)
+	res, err := q.FilterPipelines(ctx, zdatabase.FilterPipelinesParams{
+		Limit:  limit,
+		Offset: offset,
+	})
+	if err != nil {
+		return []zdatabase.FilterPipelinesRow{}, InternalServerError{err.Error()}
+	}
+	return res, nil
+}
+
+func allFilterPipelines(ctx context.Context, db *sql.DB) ([]zdatabase.AllFilterPipelinesRow, HTTPError) {
+	q := zdatabase.New(db)
+	res, err := q.AllFilterPipelines(ctx)
+	if err != nil {
+		return []zdatabase.AllFilterPipelinesRow{}, InternalServerError{err.Error()}
+	}
+	return res, nil
 }
 
 func listAllPipelines(ctx context.Context, db *sql.DB, organization string) ([]zdatabase.Pipeline, HTTPError) {
@@ -191,23 +327,61 @@ func getPipeline(ctx context.Context, db *sql.DB, organization string, uuid stri
 	return res, nil
 }
 
-func createExecution(ctx context.Context, db *sql.DB, pipeline int64, executionid string) (zdatabase.Execution, error) {
+func createExecution(ctx context.Context, db *sql.DB, pipeline int64, executionid string) (zdatabase.Execution, HTTPError) {
 	q := zdatabase.New(db)
-	return q.CreateExecution(ctx, zdatabase.CreateExecutionParams{
+	res, err := q.CreateExecution(ctx, zdatabase.CreateExecutionParams{
 		Pipeline:    pipeline,
 		Executionid: executionid,
 	})
+	if err != nil {
+		return zdatabase.Execution{}, InternalServerError{err.Error()}
+	}
+	return res, nil
 }
 
-func updateExecutionWorkflow(ctx context.Context, db *sql.DB, execution int64, workflow *wfv1.Workflow) error {
+func listRunningExecutions(ctx context.Context, db *sql.DB) ([]zdatabase.Execution, HTTPError) {
+	q := zdatabase.New(db)
+	res, err := q.ListRunningExecutions(ctx)
+	if err != nil {
+		return []zdatabase.Execution{}, InternalServerError{err.Error()}
+	}
+	return res, nil
+}
+
+func updateExecutionResults(ctx context.Context, db *sql.DB, execution int64, pipeline zjson.Pipeline) error {
+	jsonPipeline, err := json.Marshal(pipeline)
+	if err != nil {
+		return err
+	}
+	q := zdatabase.New(db)
+	_, err = q.UpdateExecutionResults(ctx, zdatabase.UpdateExecutionResultsParams{
+		Json: jsonPipeline,
+		ID:   execution,
+	})
+	return err
+}
+
+func updateExecutionJson(ctx context.Context, db *sql.DB, execution int64, workflow *wfv1.Workflow) error {
 	jsonWorkflow, err := json.Marshal(workflow)
 	if err != nil {
 		return err
 	}
 	q := zdatabase.New(db)
-	_, err = q.AddExecutionWorkflow(ctx, zdatabase.AddExecutionWorkflowParams{
+	_, err = q.AddExecutionJson(ctx, zdatabase.AddExecutionJsonParams{
 		Json: jsonWorkflow,
 		ID:   execution,
+	})
+	return err
+}
+
+func addExecutionWorkflow(ctx context.Context, db *sql.DB, execution int64, workflow string) error {
+	q := zdatabase.New(db)
+	_, err := q.AddExecutionWorkflow(ctx, zdatabase.AddExecutionWorkflowParams{
+		ID: execution,
+		Workflow: sql.NullString{
+			String: workflow,
+			Valid:  true,
+		},
 	})
 	return err
 }
@@ -288,6 +462,16 @@ func listExecutions(ctx context.Context, db *sql.DB, organization string, uuid s
 	})
 	if err != nil {
 		return []zdatabase.Execution{}, InternalServerError{err.Error()}
+	}
+
+	return res, nil
+}
+
+func getExecutionById(ctx context.Context, db *sql.DB, executionId string) (zdatabase.Execution, HTTPError) {
+	q := zdatabase.New(db)
+	res, err := q.GetExecutionByExecutionId(ctx, executionId)
+	if err != nil {
+		return zdatabase.Execution{}, InternalServerError{err.Error()}
 	}
 
 	return res, nil

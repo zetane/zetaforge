@@ -31,12 +31,12 @@ export default function LibraryWrapper({ specs, pipelines }) {
 
   useEffect(() => {
     const blockResults = specs.filter((spec) =>
-      spec.information.name.toLowerCase().includes(searchTerm.toLowerCase())
+      spec?.information?.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
     setSearchResults(blockResults);
 
     const pipelineResults = pipelines.filter((pipeline) =>
-      pipeline.name.toLowerCase().includes(searchTerm.toLowerCase())
+      pipeline?.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
     setFilteredPipelines(pipelineResults);
   }, [searchTerm, specs, pipelines]);
@@ -77,7 +77,7 @@ export default function LibraryWrapper({ specs, pipelines }) {
   return (
     <SideNav
       aria-label="Side navigation"
-      expanded={showLibrary} 
+      expanded={showLibrary}
       isFixedNav>
       <SideNavItems>
         <ContainedList label={searchTitle} kind="on-page" action={''}>
@@ -90,7 +90,7 @@ export default function LibraryWrapper({ specs, pipelines }) {
             labelText="Search"
           />
           <Tabs>
-            <TabList fullWidth className="full-tabs">
+            <TabList fullWidth className="full-tabs" aria-label='Core blocks and pipelines'>
               <Tab>Core Blocks ({searchResults.length})</Tab>
               <Tab>Core Pipelines ({filteredPipelines.length})</Tab>
             </TabList>

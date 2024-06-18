@@ -26,7 +26,6 @@ export const LibraryPipelineTile = ({ pipeline, index }) => {
 
   // Use the custom hook to fetch the cover image path
   const { coverImagePath, isLoading } = usePipelineCoverImagePath(pipelineId);
-  console.log("pipeline image path", coverImagePath)
 
   const handleImageError = (e) => {
     e.target.style.display = 'none'; // Hide the image if it fails to load

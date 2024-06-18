@@ -9,7 +9,16 @@ export const trpcClient = trpc.createClient({
   links: [ipcLink()],
 });
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      networkMode: 'offlineFirst'
+    },
+    mutations: {
+      networkMode: 'offlineFirst'
+    }
+  }
+})
 
 export default function ProviderInjector({ children }) {
   return (

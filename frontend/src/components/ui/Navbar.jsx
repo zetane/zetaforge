@@ -1,7 +1,7 @@
 import { modalContentAtom } from "@/atoms/modalAtom";
-import { pipelineAtom } from "@/atoms/pipelineAtom";
 import { darkModeAtom } from "@/atoms/themeAtom";
-import { Password, Play, Renew } from "@carbon/icons-react";
+import { pipelineAtom, pipelineFactory, workspaceAtom } from "@/atoms/pipelineAtom";
+import { Play, Password, Renew } from "@carbon/icons-react";
 import {
   Header,
   HeaderGlobalBar,
@@ -9,28 +9,60 @@ import {
   HeaderMenuItem,
   HeaderName,
   HeaderNavigation,
-  SkipToContent
+  SkipToContent,
 } from "@carbon/react";
-import { useAtom } from "jotai";
-import { useImmerAtom } from "jotai-immer";
-import { useEffect } from "react";
-import useWebSocket, { ReadyState } from "react-use-websocket";
+import { useAtom, useSetAtom } from "jotai";
 import LoadBlockButton from "./LoadBlockButton";
 import LoadPipelineButton from "./LoadPipelineButton";
 import LogsButton from "./LogsButton";
 import NewButton from "./NewButton";
-import { PipelineLogs } from "./PipelineLogs";
-import PipelineNameLabel from "./PipelineNameLabel";
+import ApiKeysModal from "./modal/ApiKeysModal";
+import PipelinesButton from "./PipelinesButton";
+import WorkspaceTabs from "./WorkspaceTabs";
+import { useEffect } from "react";
+import { useImmerAtom } from "jotai-immer";
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
+import { useLoadServerPipeline } from "./useLoadPipeline";
 import RunPipelineButton from "./RunPipelineButton";
 import SaveAsPipelineButton from "./SaveAsPipelineButton";
 import SavePipelineButton from "./SavePipelineButton";
 import AnvilConfigurationsModal from "./modal/AnvilConfigurationsModal";
-import ApiKeysModal from "./modal/ApiKeysModal";
+import { activeConfigurationAtom } from "@/atoms/anvilConfigurationsAtom";
+import { PipelineStopButton } from "./PipelineStopButton";
 
 export default function Navbar({ children }) {
   const [darkMode, setDarkMode] = useAtom(darkModeAtom);
   const [modalContent, setModalContent] = useAtom(modalContentAtom);
+  const [workspace, setWorkspace] = useImmerAtom(workspaceAtom);
   const [pipeline, setPipeline] = useImmerAtom(pipelineAtom);
+  const [configuration] = useAtom(activeConfigurationAtom);
+  const loadPipeline = useLoadServerPipeline();
+
+  const { pending, error, data } = useQuery({
+    queryKey: ['pipelines'],
+    queryFn: async () => {
+      const res = await axios.get(`http://${configuration.host}:${configuration.anvilPort}/pipeline/filter?limit=100000&offset=0`)
+      return res.data;
+    },
+    refetchInterval: workspace.fetchInterval
+  })
+
+  useEffect(() => {
+    const pipelines = data ?? []
+    setWorkspace((draft) => {
+      for (const serverPipeline of pipelines) {
+        const loaded = loadPipeline(serverPipeline, configuration)
+        const key = loaded.id + "." + loaded.record.Execution
+        const current = workspace.pipelines[key]
+        if (current?.record.Results || current?.record?.Status == "Failed" || current?.record?.Status == "Succeeded" || current?.record?.Status == "Error") {
+          continue
+        }
+        draft.pipelines[key] = loaded
+        draft.executions[loaded.record.Execution] = loaded
+      }
+    })
+  }, [data])
 
   const modalPopper = (content) => {
     setModalContent({
@@ -42,92 +74,33 @@ export default function Navbar({ children }) {
 
   const svgOverride = { position: 'absolute', right: '15px', top: '5px' }
 
-  const { sendMessage, lastMessage, readyState } = useWebSocket(
-    pipeline.socketUrl,
-    {
-      share: true,
-      shouldReconnect: () => false,
-    }
-  );
+  let runButton =  (
+    <RunPipelineButton modalPopper={modalPopper} action="Run">
+      <Play size={20} style={svgOverride} />
+    </RunPipelineButton>
+  )
 
-  useEffect(() => {
-    if (lastMessage !== null) {
-      setPipeline((draft) => {
-        const mess = JSON.parse(lastMessage.data).content
-        const splitMess = mess.split("::::")
-        // slices off the []
-        const pod = splitMess[0].slice(1, -1)
-        const key = pod.split("-").slice(1,).join("-")
-        if (draft.data[key]) {
-          const node = draft.data[key]
-          const message = splitMess[1].trim()
-          const tagAndObject = message.split("|||")
-          const tag = tagAndObject[0].trim()
-
-          if (tag == "outputs") {
-            try {
-              const outs = JSON.parse(tagAndObject[1]);
-              if (outs && typeof outs === 'object') { // Ensure outs is an object
-                for (const [key, value] of Object.entries(outs)) {
-                  if (!node.events.outputs) {
-                    node.events["outputs"] = {};
-                  }
-                  node.events.outputs[key] = value;
-                }
-              }
-            } catch (err) {
-              console.error('Failed to parse outputs:', err);
-            }
-          }
-          if (tag == "inputs") {
-            try {
-              const outs = JSON.parse(tagAndObject[1]);
-              if (outs && typeof outs === 'object') { // Ensure outs is an object
-                for (const [key, value] of Object.entries(outs)) {
-                  if (!node.events.inputs) {
-                    node.events["inputs"] = {};
-                  }
-                  node.events["inputs"][key] = value;
-                }
-              }
-            } catch (err) {
-              console.error('Failed to parse inputs:', err);
-            }
-          }
-
-        }
-        draft.log = draft.log.concat(`${mess}\n`)
-      })
-    }
-  }, [lastMessage]);
-
-  useEffect(() => {
-    if (readyState === ReadyState.OPEN) {
-      if (pipeline.socketUrl) {
-        modalPopper(<PipelineLogs />)
-      }
-    } else if (readyState === ReadyState.CLOSED) {
-      setPipeline((draft) => {
-        draft.socketUrl = null;
-      })
-    }
-  }, [readyState]);
+  if (pipeline?.record?.Status == "Running" || pipeline?.record?.Status == "Pending") {
+    runButton = (
+      <PipelineStopButton executionId={pipeline?.record?.Execution} configuration={configuration}/>
+    )
+  }
 
   return (
-    <Header aria-label="ZetaForge">
+    <Header aria-label="ZetaForge" className="flex flex-wrap">
       <SkipToContent />
       <HeaderName prefix="" className="select-none">
         ZetaForge
       </HeaderName>
       <HeaderNavigation aria-label="ZetaForge">
-        <HeaderMenu menuLinkName="File">
+        <HeaderMenu menuLinkName="File" aria-label="File">
           <NewButton />
           <SavePipelineButton />
           <SaveAsPipelineButton />
           <LoadPipelineButton />
           <LoadBlockButton />
         </HeaderMenu>
-        <HeaderMenu menuLinkName="Settings">
+        <HeaderMenu menuLinkName="Settings" aria-label="Settings">
           <HeaderMenuItem
             onClick={() => modalPopper(<ApiKeysModal />)}>
             <Password size={16} className="mx-1 align-middle"></Password>
@@ -141,29 +114,27 @@ export default function Navbar({ children }) {
             Toggle Theme
           </HeaderMenuItem>
         </HeaderMenu>
-        <HeaderMenu menuLinkName="Help">
-          <HeaderMenuItem onClick={() => window.open('https://github.com/zetane/zetaforge')}>
-            GitHub
-          </HeaderMenuItem>
-          <HeaderMenuItem onClick={() => window.open('https://discord.gg/zetaforge')}>
-            Discord
-          </HeaderMenuItem>
-          <HeaderMenuItem onClick={() => window.open('https://zetane/docs/')}>
-            Docs
-          </HeaderMenuItem>
+        <HeaderMenu menuLinkName="Help" aria-label="Help">
+            <HeaderMenuItem onClick={() => window.open('https://github.com/zetane/zetaforge')}>
+              GitHub
+            </HeaderMenuItem>
+            <HeaderMenuItem onClick={() => window.open('https://discord.gg/zetaforge')}>
+              Discord
+            </HeaderMenuItem>
+            <HeaderMenuItem onClick={() => window.open('https://zetane.com/docs/')}>
+              Docs
+            </HeaderMenuItem>
         </HeaderMenu>
       </HeaderNavigation>
       <HeaderGlobalBar>
-        <RunPipelineButton modalPopper={modalPopper} action="Run">
-          <Play size={20} style={svgOverride} />
-        </RunPipelineButton>
-
+        { runButton }
         <RunPipelineButton modalPopper={modalPopper} action="Rebuild">
           <Renew size={20} style={svgOverride} />
         </RunPipelineButton>
-        <PipelineNameLabel />
         <LogsButton />
+        <PipelinesButton />
       </HeaderGlobalBar>
+      <WorkspaceTabs />
       {children}
     </Header>
   );

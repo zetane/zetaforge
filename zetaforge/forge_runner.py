@@ -113,7 +113,7 @@ def get_kubectl_contexts():
             print(f"{i}. {context[1:]} (current)")
         else:
             print(f"{i}. {context}")
-    
+
     return contexts
 
 def select_kubectl_context():
@@ -177,7 +177,7 @@ def setup(server_version, client_version, driver, build_flag = True, install_fla
         in_context = (switch_context.returncode == 0)
 
         if not in_context:
-            print(f"Cannot find the context {context} for kubernetes. Please double check that you have entered the correct context.")        
+            print(f"Cannot find the context {context} for kubernetes. Please double check that you have entered the correct context.")
             subprocess.run(["kubectl", "config", "get-contexts"], capture_output=True, text=True)
             mixpanel_client.track_event("Setup Failure - Context Switch Error")
             raise Exception("Exception while setting the context")
@@ -206,7 +206,7 @@ def read_error(process, name):
         print(f"{name} (stderr): {line.decode('utf-8')}", end='')
 
 #dev version is only passed, when a developer wants to pass a local version(for e.g. dev_path=./s2-v2.3.5-amd64)
-def run_forge(server_version=None, client_version=None, server_path=None, client_path=None, is_dev=False):
+def run_forge(server_version=None, client_version=None, server_path=None, client_path=None, is_dev=False, no_sandbox=False):
     global time_start
     time_start = datetime.now()
     mixpanel_client.track_event('Launch Initiated')
@@ -229,34 +229,37 @@ def run_forge(server_version=None, client_version=None, server_path=None, client
             server_executable = f"./{server_executable}"
         else:
             server_executable = server_path
-        
+
         try:
             server = subprocess.Popen([server_executable],stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=os.path.dirname(server_path))
         except:
             mixpanel_client.track_event("Launch Failure - Anvil Launch Failed")
             raise Exception(f"Error occured while launching the server executable: {server_executable}")
-        
+
         mixpanel_client.track_event('Launch - Anvil Launched')
-        
+
         print(f"Launching client {client_path}..")
         client_executable = os.path.basename(client_path)
         if platform.system() == 'Darwin':
             client_executable = [f"./{client_executable}"]
         elif platform.system() == 'Windows':
             client_executable = [client_path, '--no-sandbox']
-        else: 
-            client_executable = [f"./{client_executable}"]
-        
+        else:
+            client_executable = [f"./{client_executable}", "--no-sandbox"]
+
         #handles the situation where user launches pip launcher with is_dev, for the client executable.
         if is_dev:
             client_executable.append("--is_dev")
+
+        if no_sandbox:
+            client_executable.append("--no-sandbox")
 
         try:
             client = subprocess.Popen(client_executable, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=os.path.dirname(client_path))
         except:
             mixpanel_client.track_event("Launch Failure - Client Launch Failed")
             raise Exception(f"Error occured while launching the client executable: {client_executable}")
-            
+
         mixpanel_client.track_event('Launch - Client Launched')
 
         # Create threads to read the outputs concurrently
@@ -279,7 +282,7 @@ def run_forge(server_version=None, client_version=None, server_path=None, client
 
         mixpanel_client.track_event('Launch Successful')
 
-    except KeyboardInterrupt: 
+    except KeyboardInterrupt:
         print("Terminating servers..")
 
     finally:
@@ -336,11 +339,11 @@ def check_expected_services(config):
     if is_local:
         local = config["Local"]
         ports = [local["RegistryPort"]]
-    
+
         for port in ports:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(1)  # Set a timeout of 1 second
-            
+
             try:
                 sock.bind(('localhost', int(port)))
 
@@ -350,8 +353,8 @@ def check_expected_services(config):
                     print(f"Service running at port {port}")
             finally:
                 sock.close()
-    
-    return True 
+
+    return True
 
 def create_config_json(s2_path, context, driver, is_dev):
     config = {
@@ -372,12 +375,10 @@ def create_config_json(s2_path, context, driver, is_dev):
             "BucketPort": 8333,
             "Driver": driver
         }
-    } 
+    }
 
     file_path = os.path.join(s2_path, "config.json")
-    with open(file_path, "w") as outfile: 
+    with open(file_path, "w") as outfile:
         json.dump(config, outfile)
 
     return file_path
-
-

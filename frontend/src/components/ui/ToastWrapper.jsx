@@ -9,5 +9,5 @@ export default function ToastWrapper() {
     setCompilationErrorToast(false);
   };
 
-  return (<div class="absolute bottom-3 right-3">{compilationErrorToast && <CompilationErrorToast onClose={onClose} />}</div>)
+  return (<div class="absolute bottom-3 right-3 z-[9000]">{compilationErrorToast && <CompilationErrorToast onClose={onClose} />}</div>)
 }

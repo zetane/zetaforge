@@ -6,7 +6,7 @@
   border-radius: 7px;
   padding: 0px !important;
   margin: 5px;
-  cursor: move; 
+  cursor: move;
 
   /* Prevent background color leak outs */
   -webkit-background-clip: padding-box;
@@ -39,13 +39,13 @@
 
 .library-tile-container {
   overflow: auto;
-  height: calc(100vh - 230px); /* Adjust the 150px based on the height of other elements */ 
+  height: calc(100vh - 230px); /* Adjust the 150px based on the height of other elements */
 }
 
 .library-switcher {
   position: fixed !important;
   left: 0px;
-  top: 48px;
+  top: 6rem;
   border-radius: 2px;
   z-index: 7000;
 }
@@ -103,5 +103,7 @@
 }
 
 .custom-modal-size .cds--modal-content {
-  overflow: hidden !important;
+}
+.cds--tabs .cds--tabs__nav-link:focus, .cds--tabs .cds--tabs__nav-link:active {
+  outline: none !important;
 }

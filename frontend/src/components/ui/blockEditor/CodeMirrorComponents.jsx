@@ -16,6 +16,15 @@ const backgroundTheme = EditorView.theme({
   }
 });
 
+const viewerBackgroundTheme = EditorView.theme({
+  ".cm-content": {
+    backgroundColor: "var(--beCodeViewerBackground)",
+    "& ::selection": {
+      backgroundColor: "#ffcc00",
+    }
+  }
+});
+
 const themeAtom = atom((get) => get(darkModeAtom) ? vscodeDark : githubLight);
 
 export const ViewerCodeMirror = ({ code }) => {
@@ -24,7 +33,7 @@ export const ViewerCodeMirror = ({ code }) => {
     <CodeMirror
       value={code}
       theme={theme}
-      extensions={[loadLanguage("python"), backgroundTheme]}
+      extensions={[loadLanguage("python"), viewerBackgroundTheme]}
       readOnly={true}
       basicSetup={{
         lineNumbers: true,
@@ -84,7 +93,7 @@ export const LogsCodeMirror = ({ code, onUpdate }) => {
       extensions={[EditorView.lineWrapping]}
       readOnly={true}
       basicSetup={{
-        lineNumbers: false,
+        lineNumbers: true,
         highlightActiveLineGutter: false,
         highlightSpecialChar: false,
         history: false,

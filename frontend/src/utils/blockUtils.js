@@ -37,3 +37,15 @@ export function replaceIds(block, id){
   }
   return block;
 }
+
+export function trimQuotes(str) {
+   if (typeof str !== 'string') {
+     return str;
+   }
+
+   if (str.length >= 2 && (str[0] === '"' || str[0] === "'") && str[0] === str[str.length - 1]) {
+     return str.slice(1, -1);
+   }
+
+   return str;
+ }

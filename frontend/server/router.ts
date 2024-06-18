@@ -88,7 +88,6 @@ export const appRouter = router({
         return { coverImagePath: null };
       }
     }),
-
   //TODO: load and validate schema
   savePipeline: publicProcedure
     .input(z.object({
@@ -136,7 +135,7 @@ export const appRouter = router({
       blockId: z.string(),
       blockPath: z.string(),
       pipelinePath: z.string()
-    })) 
+    }))
     .mutation(async(opts) => {
       const {input} = opts;
       const {pipelineSpec, blockSpec, blockId, blockPath, pipelinePath} = input;
@@ -257,8 +256,8 @@ export const appRouter = router({
       }))
       .query(async (opts) => {
         const { input } = opts;
-        const { blockPath } = input; 
-        
+        const { blockPath } = input;
+
         const chatHistory = await getHistory(blockPath);
         return chatHistory;
       }),
@@ -269,8 +268,8 @@ export const appRouter = router({
       }))
       .mutation(async (opts) => {
         const { input } = opts;
-        const { blockPath, history } = input; 
-        
+        const { blockPath, history } = input;
+
         await  updateHistory(blockPath, history);
       }),
     }),
@@ -281,8 +280,8 @@ export const appRouter = router({
       }))
       .query(async (opts) => {
         const { input } = opts;
-        const { blockPath } = input; 
-        
+        const { blockPath } = input;
+
         const chatIndex = await getIndex(blockPath);
         return chatIndex;
       }),
@@ -293,8 +292,8 @@ export const appRouter = router({
       }))
       .mutation(async (opts) => {
         const { input } = opts;
-        const { blockPath, index } = input; 
-        
+        const { blockPath, index } = input;
+
         await updateIndex(blockPath, index);
       }),
     }),

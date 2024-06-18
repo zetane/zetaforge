@@ -6,6 +6,7 @@ import { modalContentAtom } from "@/atoms/modalAtom";
 
 export default function LogsButton() {
   const [modalContent, setModalContent] = useAtom(modalContentAtom);
+
   const modalPopper = (content) => {
     setModalContent({
       ...modalContent,

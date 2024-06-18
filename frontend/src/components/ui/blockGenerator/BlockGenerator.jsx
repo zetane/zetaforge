@@ -1,10 +1,14 @@
+import { drawflowEditorAtom } from "@/atoms/drawflowAtom";
+import { pipelineAtom } from "@/atoms/pipelineAtom";
 import { Code, View } from "@carbon/icons-react";
-import { Modal } from "@carbon/react";
 import { useImmerAtom } from "jotai-immer";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileBlock } from "./FileBlock";
 import { activeConfigurationAtom } from "@/atoms/anvilConfigurationsAtom";
+import { modalContentAtom } from "@/atoms/modalAtom";
 import { useAtom } from "jotai";
+import ClosableModal from "@/components/ui/modal/ClosableModal";
+import { trimQuotes } from "@/utils/blockUtils";
 
 const isTypeDisabled = (action) => {
   if (!action.parameters) {
@@ -32,8 +36,9 @@ const checkPath = async (path, count, setIframeSrc) => {
     });
 }
 
-const BlockGenerator = ({ block, openView, id, historySink, pipelineAtom }) => {
-  const [_, setFocusAction] = useImmerAtom(pipelineAtom)
+const BlockGenerator = ({ block, openView, id, history }) => {
+  const [pipeline, setFocusAction] = useImmerAtom(pipelineAtom)
+  const [editor, _s] = useAtom(drawflowEditorAtom);
   const [configuration] = useAtom(activeConfigurationAtom)
 
   const styles = {
@@ -44,7 +49,9 @@ const BlockGenerator = ({ block, openView, id, historySink, pipelineAtom }) => {
   const [iframeSrc, setIframeSrc] = useState("")
   useEffect(() => {
     if (block.events.outputs?.html) {
-      const fileUrl = `http://${configuration.host}:${configuration.s3Port}/zetaforge/${historySink}/${block.events.outputs.html}`
+      // these outputs are a special case
+      const html = trimQuotes(block.events.outputs.html)
+      const fileUrl = `http://${configuration.host}:${configuration.s3Port}/zetaforge/${history}/${html}`
       checkPath(fileUrl, 0, setIframeSrc)
     }
   }, [block.events.outputs?.html])
@@ -52,13 +59,22 @@ const BlockGenerator = ({ block, openView, id, historySink, pipelineAtom }) => {
   const disabled = isTypeDisabled(block.action)
   const preview = (block.views.node.preview?.active == "true")
 
-  const handleInputChange = useCallback((name, value, parameterName) => {
-    setFocusAction((draft) => { draft.data[id].action.parameters[parameterName].value = value })
-  }, [focus]);
+  const handleInputChange = (name, value, parameterName) => {
+    setFocusAction((draft) => {
+      draft.data[id].action.parameters[parameterName].value = value
+    })
+  }
 
-  let content = (<BlockContent html={block.views.node.html} block={block} onInputChange={handleInputChange} />)
-  if (block.action.parameters?.path?.type == "file") {
-    content = (<FileBlock blockId={id} block={block} setFocusAction={setFocusAction} />)
+  let content = (<BlockContent
+    html={block.views.node.html}
+    block={block}
+    onInputChange={handleInputChange}
+    id={id}
+    history={history}
+    />)
+  const type = block?.action?.parameters?.path?.type
+  if (type == "file" || type == "blob" || type == "fileLoad") {
+    content = (<FileBlock blockId={id} block={block} setFocusAction={setFocusAction} history={history}/>)
   }
 
   const backgroundColor = block.views?.node?.title_bar?.background_color || 'var(--title-background-color)';
@@ -67,7 +83,7 @@ const BlockGenerator = ({ block, openView, id, historySink, pipelineAtom }) => {
     <div className="parent-node">
       <div className="drawflow-node" id={`node-${id}`} style={styles}>
         <div className="drawflow_content_node">
-          {preview && <BlockPreview id={id} src={iframeSrc} />}
+          {preview && <BlockPreview id={id} src={iframeSrc} history={history}/>}
 
           <BlockTitle
             name={block.information.name}
@@ -77,11 +93,12 @@ const BlockGenerator = ({ block, openView, id, historySink, pipelineAtom }) => {
             actions={!disabled}
             src={iframeSrc}
             blockEvents={block.events}
+            history={history}
           />
           <div className="block-body">
             <div className="block-io">
-              <BlockInputs inputs={block.inputs} />
-              <BlockOutputs outputs={block.outputs} />
+              <BlockInputs inputs={block.inputs} history={history} block={block}/>
+              <BlockOutputs outputs={block.outputs} history={history} block={block}/>
             </div>
             {content}
           </div>
@@ -103,12 +120,23 @@ const BlockPreview = ({ id, src }) => {
 }
 
 
-const BlockTitle = ({ name, id, color, openView, actions, src, blockEvents }) => {
+const BlockTitle = ({ name, id, color, openView, actions, src, blockEvents, history }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [modalContent, setModalContent] = useAtom(modalContentAtom);
+
+  const eventsModal = (
+    <ClosableModal
+      modalHeading="Block Events"
+    >
+      <div className="flex flex-col gap-4 p-3">
+        {JSON.stringify(blockEvents, null, 2)}
+      </div>
+    </ClosableModal>
+  )
 
   const handleViewClick = () => {
     if (!src) {
-      setIsOpen(true)
+      modalPopper(eventsModal)
     } else {
       window.open(src, '_blank');
     }
@@ -121,21 +149,18 @@ const BlockTitle = ({ name, id, color, openView, actions, src, blockEvents }) =>
     </div>
   );
 
+  const modalPopper = (content) => {
+    setModalContent({
+      ...modalContent,
+      show: true,
+      content: content,
+    });
+  };
+
   return (
     <div className="title-box" style={{ backgroundColor: color }}>
       <span>{name}</span>
       {actions && actionContainer}
-
-      <Modal
-        modalHeading="Block Events"
-        passiveModal={true}
-        open={isOpen}
-        onRequestClose={() => setIsOpen(false)}
-      >
-        <div className="flex flex-col gap-4 p-3">
-          {JSON.stringify(blockEvents, null, 2)}
-        </div>
-      </Modal>
     </div>
   );
 };
@@ -163,23 +188,38 @@ const parseHtmlToInputs = (html) => {
   return inputs;
 };
 
-const InputField = ({ type, value, name, step, parameterName, onChange }) => {
-  const [currentValue, setCurrentValue] = useState("");
+const InputField = ({ type, value, name, step, parameterName, onChange, id }) => {
+  const [editor, _] = useAtom(drawflowEditorAtom);
+  const [currentValue, setCurrentValue] = useState(value);
   const inputRef = useRef(null);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+
+  useEffect(() => {
+    setCurrentValue(value)
+  }, [value])
+
+  useEffect(() => {
+    if (!editor) return;
+    if (!inputRef && !inputRef.current) return;
+
+    const resizeObserver = new ResizeObserver(entry => {
+      if (entry[0].target.classList.contains('textarea-node')) {
+        editor.updateConnectionNodes(`node-${id}`);
+      }
+    });
+
+    if (inputRef?.current) {
+      resizeObserver.observe(inputRef.current)
+    }
+
+    return () => resizeObserver.disconnect();
+  }, [])
 
   const setCursorPosition = (start, end) => {
     if (!inputRef?.current) return;
     inputRef.current.selectionStart = start;
     inputRef.current.selectionEnd = end || start;
   };
-
-  useEffect(() => {
-    if (currentValue === "") {
-      onChange(name, "", parameterName)
-      setCurrentValue("")
-    }
-  }, [currentValue])
 
   const preventQuotation = (event) => {
     const quotations = ['"', "'", '`'];
@@ -269,8 +309,9 @@ const InputField = ({ type, value, name, step, parameterName, onChange }) => {
             name={name}
             onChange={handleChange}
             className="input-element"
+            ref={inputRef}
             style={{
-              minWidth: '200px', 
+              minWidth: '200px',
               padding: '10px',
               paddingRight: '28px'
             }}
@@ -314,7 +355,7 @@ const InputField = ({ type, value, name, step, parameterName, onChange }) => {
   }
 };
 
-const BlockContent = ({ html, block, onInputChange }) => {
+const BlockContent = ({ html, block, onInputChange, id, history }) => {
   const parsedInputs = parseHtmlToInputs(html);
 
   return (
@@ -333,6 +374,7 @@ const BlockContent = ({ html, block, onInputChange }) => {
             onChange={(name, value, parameterName) =>
               onInputChange(name, value, parameterName)
             }
+            id={id}
           />
         )
       })}
@@ -340,7 +382,7 @@ const BlockContent = ({ html, block, onInputChange }) => {
   );
 };
 
-const BlockInputs = ({ inputs }) => (
+const BlockInputs = ({ inputs, history }) => (
   <div className="inputs">
     {Object.entries(inputs).map(([name, input]) => (
       <div key={name} className="block-input">
@@ -354,7 +396,7 @@ const BlockInputs = ({ inputs }) => (
   </div>
 );
 
-const BlockOutputs = ({ outputs }) => (
+const BlockOutputs = ({ outputs, history }) => (
   <div className="outputs">
     {Object.entries(outputs).map(([name, output]) => (
       <div key={name} className="block-output">

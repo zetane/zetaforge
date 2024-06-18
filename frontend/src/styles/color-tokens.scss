@@ -4,10 +4,10 @@
 	--ztn-purple-10: rgb(191, 158, 252);
 	--ztn-red-0: rgba(255, 0, 0, 1);
 	--ztn-white-0: #ffffff;
-	--ztn-white-1: #f4f4f4;
+	--ztn-white-1: rgba(244, 244, 244, 1);
 	--ztn-gray-0: rgba(139,139,139,1);
 	--ztn-gray-1: rgba(38, 38, 38, 1);
-	--ztn-gray-2: #393939;
+	--ztn-gray-2: rgba(235, 235, 235, 1);
 	--ztn-black-0: #000;
 	--ztn-black-1: #161616
 	--ztn-orange-0: rgba(252, 168, 0, 1);
@@ -19,13 +19,15 @@
 	--cds-button-tertiary-hover: var(--ztn-purple-0) !important;
 	--cds-background-brand: var(--ztn-white-0) !important;
 	--cds-border-interactive: var(--ztn-purple-0) !important;
-	--cds-link-primary: var(--ztn-black-0) !important;
-	--cds-link-primary-hover: var(--ztn-purple-0) !important;
+	--cds-link-primary: var(--ztn-purple-0) !important;
+	--cds-link-primary-hover: var(--ztn-purple-10) !important;
 	--cds-link-secondary: var(--ztn-purple-0) !important;
 	--cds-link-inverse: var(--ztn-white-0) !important;
 	--cds-focus: var(--ztn-purple-0) !important;
 	--cds-focus-inverse: var(--ztn-purple-0) !important;
 	--pipeline-background-color: var(--ztn-gray-1) !important;
+	--cds-layer: var(--ztn-gray-2) !important;
+	--cds-layer-accent: var(--ztn-white-0) !important;
 	--tooltip-color: var(--ztn-white-0);
 	--tooltip-background-color: var(--ztn-gray-2);
 }

@@ -47,7 +47,6 @@ export default function LoadBlockButton() {
     return id;
   }
 
-
   const loadBlock = async (pipeline) => {
     try {
       mixpanelService.trackEvent('Load Block')

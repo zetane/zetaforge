@@ -9,11 +9,7 @@ import fs, { readFileSync } from "fs";
 import multer from "multer";
 import { Configuration, OpenAIApi } from "openai";
 import path from "path";
-import sha256 from 'sha256';
 import { BLOCK_SPECS_FILE_NAME } from "../src/utils/constants";
-import { fileExists, readJsonToObject, readSpecs } from "./fileSystem.js";
-import { copyPipeline, saveBlock } from "./pipelineSerialization.js";
-
 
 function startExpressServer() {
   const app = express();
@@ -49,7 +45,7 @@ function startExpressServer() {
       try {
           // Read the JSON file synchronously
           const data = readFileSync(path.join(__dirname, '..', '..', 'history', 'active_run.json'), 'utf8');
-          
+
           // Parse the JSON content
           const parsedData = JSON.parse(data);
 
@@ -116,7 +112,7 @@ function startExpressServer() {
   app.post("/get-agent", async (req, res) => {
     const { blockPath } = req.body;
     const specsPath = path.join(blockPath, BLOCK_SPECS_FILE_NAME)
-    
+
     fs.readFile(specsPath, (err, data) => {
       if (err) {
         console.error(`Error sending the file: ${err}`);
@@ -136,7 +132,7 @@ function startExpressServer() {
   app.post("/api/call-agent", async (req, res) => {
     const { userMessage, agentName, conversationHistory, apiKey} = req.body
     console.log("USER MESSAGE", userMessage);
-  
+
     try {
       // Path to the Python script
       let agents = "agents"
@@ -253,10 +249,10 @@ function startExpressServer() {
 
   app.post("/new-block-react", (req, res) => {
     const data = req.body;
-    
+
     let folderPath = data.block_name;
     const filePath = path.join(data.blockPath, "computations.py");
-  
+
     fs.writeFile(filePath, data.computations_script, (err) => {
       if (err) {
         console.error("Error writing data to file:", err);
@@ -292,4 +288,3 @@ function startExpressServer() {
 }
 
 export { startExpressServer };
-

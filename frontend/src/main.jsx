@@ -1,12 +1,8 @@
-import App from '@/App.jsx';
 import * as Sentry from "@sentry/electron/renderer";
 import { init as reactInit } from "@sentry/react";
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-// import './App.css'; // Import global styles
-
-import './demos/ipc';
-//import './demos/node'
+import App from "@/App";
 
 Sentry.init(
   {
