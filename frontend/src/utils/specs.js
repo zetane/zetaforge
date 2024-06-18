@@ -1,10 +1,10 @@
 export async function updateSpecs(blockFolderName, newSpecsIO, pipelineSpecs, editor) {
-  const newSpecs = updateSepcsIO(pipelineSpecs[blockFolderName], newSpecsIO)
+  const newSpecs = updateSpecsIO(pipelineSpecs[blockFolderName], newSpecsIO)
   removeDanglingConnections(pipelineSpecs, blockFolderName, newSpecs, editor);
   return newSpecs
 }
 
-function updateSepcsIO(specs, IO) {
+function updateSpecsIO(specs, IO) {
   const newSpecs = structuredClone(specs)
   newSpecs.information.description = IO.description
 

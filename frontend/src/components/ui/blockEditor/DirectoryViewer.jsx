@@ -244,22 +244,8 @@ export default function DirectoryViewer({
       body: JSON.stringify(saveData),
     })
       .then((response) => response.json())
-      .then(async (data) => {
+      .then(async () => {
         setUnsavedChanges(false);
-        if (isComputation(currentFile.path)) {
-          try {
-            const newSpecsIO = await compileComputation.mutateAsync({ blockPath: blockPath });
-            const newSpecs = await updateSpecs(blockKey, newSpecsIO, pipeline.data, editor);
-            setPipeline((draft) => {
-              draft.data[blockKey] = newSpecs;
-            })
-            await saveBlockSpecs.mutateAsync({ blockPath: blockPath, blockSpecs: newSpecs });
-            fetchFileSystem();
-          } catch (error) {
-            console.error(error)
-            setCompilationErrorToast(true);
-          }
-        }
       })
       .catch((error) => {
         console.error("Error saving file:", error);
@@ -379,7 +365,7 @@ export default function DirectoryViewer({
           currentFile &&
           currentFile.path && (
               <div className="relative overflow-y-auto mt-6 px-5">
-              {currentFile.path.endsWith("computations.py") ? (
+              { isComputation(currentFile.path) ? (
                 <ComputationsFileEditor fetchFileSystem={fetchFileSystem} />
                 ) : EDIT_ONLY_FILES.some(fileName =>
                 currentFile.path.endsWith(fileName)) ? (
