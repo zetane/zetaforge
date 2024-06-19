@@ -363,6 +363,7 @@ func main() {
 			log.Println(err)
 			return
 		}
+
 		clientConfig, err := client.ClientConfig()
 		if err != nil {
 			log.Printf("Failed to get client config; err=%v", err)
@@ -377,6 +378,7 @@ func main() {
 
 		res, err := clientset.CoreV1().Pods("default").List(context.TODO(), metav1.ListOptions{})
 		log.Println(res, err)
+
 		ctx.String(http.StatusOK, "pong")
 	})
 	router.POST("/execute", func(ctx *gin.Context) {

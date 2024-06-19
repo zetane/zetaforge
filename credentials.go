@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -16,6 +15,7 @@ import (
 	endpoints "github.com/aws/smithy-go/endpoints"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
 )
@@ -30,26 +30,15 @@ type Oracle struct {
 }
 
 type AWS struct {
-	//RegistryAddr  string
+	RegistryAddr  string
 	RegistryToken string
 	ClusterIP     string
 	ClusterName   string
+	ClusterRegion string
 	CaCert        string
 	AccessKey     string
 	SecretKey     string
 }
-
-type Token struct {
-	Token      string
-	Expiration time.Time
-}
-
-const (
-	requestPresignParam    = 60
-	presignedURLExpiration = 15 * time.Minute
-	v1Prefix               = "k8s-aws-v1."
-	clusterIDHeader        = "x-k8s-aws-id"
-)
 
 const BUCKET = "zetaforge"
 
@@ -79,30 +68,28 @@ func s3Client(ctx context.Context, cfg Config) (*s3.Client, error) {
 	return client, nil
 }
 
-func awsToken(ctx context.Context, cfg Config) (Token, error) {
+func awsToken(ctx context.Context, cfg Config) (string, error) {
 	creds := credentials.NewStaticCredentialsProvider(cfg.Cloud.AWS.AccessKey, cfg.Cloud.AWS.SecretKey, "")
-	region := config.WithRegion("us-east-2")
+	region := config.WithRegion(cfg.Cloud.AWS.ClusterRegion)
 	awsConfig, err := config.LoadDefaultConfig(ctx, region, config.WithCredentialsProvider(creds))
 	if err != nil {
-		return Token{}, err
+		return "", err
 	}
 
 	client := sts.NewFromConfig(awsConfig, func(o *sts.Options) {
 		o.APIOptions = []func(*middleware.Stack) error{
-			smithyhttp.AddHeaderValue(clusterIDHeader, cfg.Cloud.AWS.ClusterName),
+			smithyhttp.AddHeaderValue("x-k8s-aws-id", cfg.Cloud.AWS.ClusterName),
+			smithyhttp.AddHeaderValue("X-Amz-Expires", "60"),
 		}
 	})
 
-	presignClient := sts.NewPresignClient(client)
-
-	presignedRequest, err := presignClient.PresignGetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	presignedRequest, err := sts.NewPresignClient(client).PresignGetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 
 	if err != nil {
-		return Token{}, err
+		return "", err
 	}
 
-	tokenExpiration := time.Now().Add(presignedURLExpiration - time.Minute)
-	return Token{v1Prefix + base64.RawURLEncoding.EncodeToString([]byte(presignedRequest.URL)), tokenExpiration}, nil
+	return "k8s-aws-v1." + base64.RawURLEncoding.EncodeToString([]byte(presignedRequest.URL)), nil
 }
 
 func kubernetesClient(config Config) (clientcmd.ClientConfig, error) {
@@ -132,7 +119,7 @@ func kubernetesClient(config Config) (clientcmd.ClientConfig, error) {
 				CertificateAuthorityData: cacert,
 			}
 			cfg.AuthInfos["zetaauth"] = &api.AuthInfo{
-				Token: token.Token,
+				Token: token,
 			}
 			cfg.Contexts["zetacontext"] = &api.Context{
 				Cluster:  "zetacluster",
@@ -170,13 +157,33 @@ func kubernetesClient(config Config) (clientcmd.ClientConfig, error) {
 	}
 }
 
-func registryAddress(config Config) (string, error) {
+func registryAddress(config Config) string {
 	switch config.Cloud.Provider {
 	case "aws":
-		return config.Cloud.Oracle.RegistryAddr, nil
+		return config.Cloud.AWS.RegistryAddr
 	case "oracle":
-		return config.Cloud.Oracle.RegistryAddr, nil
+		return config.Cloud.Oracle.RegistryAddr
 	default:
-		return "", errors.New("Invalid Cloud Provider")
+		return ""
+	}
+}
+
+func registryAuth(config Config) authn.Authenticator {
+	switch config.Cloud.Provider {
+	case "aws":
+		auth := authn.FromConfig(
+			authn.AuthConfig{
+				RegistryToken: config.Cloud.AWS.RegistryToken,
+			},
+		)
+		return auth
+	default:
+		auth := authn.FromConfig(
+			authn.AuthConfig{
+				Username: config.Cloud.Oracle.RegistryUser,
+				Password: config.Cloud.Oracle.RegistryPass,
+			},
+		)
+		return auth
 	}
 }

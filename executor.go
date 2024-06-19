@@ -10,7 +10,6 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,11 +21,8 @@ import (
 	workflowpkg "github.com/argoproj/argo-workflows/v3/pkg/apiclient/workflow"
 	wfv1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	endpoints "github.com/aws/smithy-go/endpoints"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/go-cmd/cmd"
@@ -34,34 +30,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
 )
-
-const BUCKET = "zetaforge"
-
-type Endpoint struct {
-	Bucket string
-	S3Port int
-}
-
-func (endpoint *Endpoint) ResolveEndpoint(ctx context.Context, params s3.EndpointParameters) (endpoints.Endpoint, error) {
-	uri, err := url.Parse(fmt.Sprintf("http://localhost:%d/%s", endpoint.S3Port, endpoint.Bucket))
-	return endpoints.Endpoint{URI: *uri}, err
-}
-
-func s3Client(ctx context.Context, cfg Config) (*s3.Client, error) {
-	awsAccessKey := "AKIAIOSFODNN7EXAMPLE"
-	awsSecretKey := "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-	creds := credentials.NewStaticCredentialsProvider(awsAccessKey, awsSecretKey, "")
-	region := config.WithRegion("us-east-2")
-	awsConfig, err := config.LoadDefaultConfig(ctx, region, config.WithCredentialsProvider(creds))
-	if err != nil {
-		return &s3.Client{}, err
-	}
-	client := s3.NewFromConfig(awsConfig, func(o *s3.Options) {
-		o.EndpointResolverV2 = &Endpoint{Bucket: BUCKET, S3Port: cfg.Local.BucketPort}
-	})
-
-	return client, nil
-}
 
 func uploadData(ctx context.Context, data string, key string, cfg Config) error {
 	body := strings.NewReader(data)
@@ -255,7 +223,12 @@ func results(ctx context.Context, db *sql.DB, execution int64, pipeline zjson.Pi
 	return updateExecutionResults(ctx, db, execution, pipeline)
 }
 
-func streaming(ctx context.Context, name string, client clientcmd.ClientConfig) {
+func streaming(ctx context.Context, name string, cfg Config) {
+	client, err := kubernetesClient(cfg)
+	if err != nil {
+		log.Printf("Log stream error; err=%v", err)
+		return
+	}
 	ctx, cli, err := apiclient.NewClientFromOpts(
 		apiclient.Opts{
 			ClientConfigSupplier: func() clientcmd.ClientConfig {
@@ -334,9 +307,14 @@ func streaming(ctx context.Context, name string, client clientcmd.ClientConfig) 
 	}
 }
 
-func runArgo(ctx context.Context, workflow *wfv1.Workflow, execution int64, client clientcmd.ClientConfig, db *sql.DB, hub *Hub) (*wfv1.Workflow, error) {
+func runArgo(ctx context.Context, workflow *wfv1.Workflow, execution int64, cfg Config, db *sql.DB, hub *Hub) (*wfv1.Workflow, error) {
 	//mixpanelClient is singleton, so a new instance won't be created.
 	mixpanelClient := GetMixpanelClient()
+
+	client, err := kubernetesClient(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cli, err := apiclient.NewClientFromOpts(
 		apiclient.Opts{
@@ -357,8 +335,7 @@ func runArgo(ctx context.Context, workflow *wfv1.Workflow, execution int64, clie
 		return nil, err
 	}
 
-	serviceClient := cli.NewWorkflowServiceClient()
-	workflow, err = serviceClient.CreateWorkflow(ctx, &workflowpkg.WorkflowCreateRequest{
+	workflow, err = cli.NewWorkflowServiceClient().CreateWorkflow(ctx, &workflowpkg.WorkflowCreateRequest{
 		Namespace: namespace,
 		Workflow:  workflow,
 	})
@@ -373,11 +350,29 @@ func runArgo(ctx context.Context, workflow *wfv1.Workflow, execution int64, clie
 	}
 
 	// streams to websocket
-	go streaming(ctx, workflow.Name, client)
+	go streaming(ctx, workflow.Name, cfg)
 	status := string(workflow.Status.Phase)
 
 	for {
-		workflow, err = serviceClient.GetWorkflow(ctx, &workflowpkg.WorkflowGetRequest{
+		client, err = kubernetesClient(cfg)
+		if err != nil {
+			return workflow, err
+		}
+
+		_, cli, err = apiclient.NewClientFromOpts(
+			apiclient.Opts{
+				ClientConfigSupplier: func() clientcmd.ClientConfig {
+					return client
+				},
+				Context: ctx,
+			},
+		)
+
+		if err != nil {
+			return workflow, err
+		}
+
+		workflow, err = cli.NewWorkflowServiceClient().GetWorkflow(ctx, &workflowpkg.WorkflowGetRequest{
 			Name:      workflow.Name,
 			Namespace: namespace,
 		})
@@ -417,7 +412,13 @@ func runArgo(ctx context.Context, workflow *wfv1.Workflow, execution int64, clie
 	return workflow, nil
 }
 
-func deleteArgo(ctx context.Context, name string, client clientcmd.ClientConfig) {
+func deleteArgo(ctx context.Context, name string, cfg Config) {
+	client, err := kubernetesClient(cfg)
+	if err != nil {
+		log.Printf("Failed to delete workflow %s; err=%v", name, err)
+		return
+	}
+
 	ctx, cli, err := apiclient.NewClientFromOpts(
 		apiclient.Opts{
 			ClientConfigSupplier: func() clientcmd.ClientConfig {
@@ -795,10 +796,10 @@ func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 		return
 	}
 
-	workflow, err = runArgo(ctx, workflow, executionId, client, db, hub)
+	workflow, err = runArgo(ctx, workflow, executionId, cfg, db, hub)
 	log.Printf("Name: %v", workflow.Name)
 	if workflow != nil {
-		defer deleteArgo(ctx, workflow.Name, client)
+		defer deleteArgo(ctx, workflow.Name, cfg)
 	}
 	if err != nil {
 		log.Printf("error during pipeline execution; err=%v", err)
@@ -860,9 +861,9 @@ func cloudExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 		return
 	}
 
-	workflow, err = runArgo(ctx, workflow, executionId, client, db, hub)
+	workflow, err = runArgo(ctx, workflow, executionId, cfg, db, hub)
 	if workflow != nil {
-		defer deleteArgo(ctx, workflow.Name, client)
+		defer deleteArgo(ctx, workflow.Name, cfg)
 	}
 	if err != nil {
 		log.Printf("error during pipeline execution; err=%v", err)
