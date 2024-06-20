@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { modalContentAtom } from "@/atoms/modalAtom";
 import { Modal } from "@carbon/react";
 import { useAtom } from "jotai";
-import LaunchAnvilButton from './LaunchAnvilButton';
 
 export default function ClosableModal(props) {
   const [modalContent, setModalContent] = useAtom(modalContentAtom);
