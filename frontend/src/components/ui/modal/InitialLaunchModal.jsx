@@ -16,12 +16,21 @@ export default function InitialLaunchModal() {
     const [currentRunningKubeContext]= useAtom(runningKubeContext)
     const serverAddress = import.meta.env.VITE_EXPRESS
     const [errMessage, setErrMessage] = useState([])
-
+    const [defaultConfig] = useAtom(defaultAnvilConfiguration)
+    
     const closeModal = () => {
-        axios.get(`${serverAddress}/ping-anvil`).then((res) => {
+        // axios.get(`${serverAddress}/ping-anvil`).then((res) => {
+        //     setOpen(false)
+        // }).catch((err) => {
+        //     console.log("I SHOULD BE HERE")
+        //     const errMessage = ["Can't ping anvil. Please re-try"]
+        //     setErrMessage(errMessage)
+        //     setOpen(true)
+        //     setErrOpen(true)
+        // })
+        axios.get(`${defaultConfig.host}/${defaultConfig.anvilPort}/ping`).then((res) => {
             setOpen(false)
-        }).catch((err) => {
-            console.log("I SHOULD BE HERE")
+        }).catch(err => {
             const errMessage = ["Can't ping anvil. Please re-try"]
             setErrMessage(errMessage)
             setOpen(true)
@@ -41,7 +50,7 @@ export default function InitialLaunchModal() {
         }
         const checkPing = async () => {
             try {
-                const res = await axios.get(`${serverAddress}/ping-anvil`)
+                const res = await axios.get(`${defaultConfig.host}/${defaultConfig.anvilPort}/ping`)
                 if(res.status === 200) {
                     console.log("ALREADY PINGING ANVIL")
                     // setOpen(false)

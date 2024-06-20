@@ -1,4 +1,4 @@
-import {Dropdown, Button} from '@carbon/react'
+import {Dropdown, Button, Loading} from '@carbon/react'
 import {useAtom} from 'jotai'
 import { useImmerAtom } from "jotai-immer";
 import ClosableModal from './ClosableModal';
@@ -17,7 +17,7 @@ export default function KubecontextModal({isPackaged, initialLaunch}) {
   const [currentRunningKubeContext, setCurrentRunningKubeContext] = useAtom(runningKubeContext)
   const [errValidMessages, setErrMessage] = useAtom(kubeErrors)
   const [isOpen, setIsOpen] = useState(false)
-  
+  const [loading, setIsLoading] = useState(false)
   useEffect(() => {
     const serverAddress = import.meta.env.VITE_EXPRESS
         if(availableKubeContextsAtom.length === 0) {
@@ -32,7 +32,7 @@ export default function KubecontextModal({isPackaged, initialLaunch}) {
   
 
   const submit = async () => {
-
+    setIsLoading(true)
     const serverAddress = import.meta.env.VITE_EXPRESS
 
     console.log("SUBMIT")
@@ -48,8 +48,13 @@ export default function KubecontextModal({isPackaged, initialLaunch}) {
         const executeAnvil = await axios.post(`${serverAddress}/launch-anvil`, reqBody)
         if(executeAnvil.status !== 200) {
             console.log("ERROR CREAATING ANVIL EXEC")
+            setIsLoading(false)
+        } else{
+            console.log("ANVIL LAUNCH SUCCESSFULLLLLLLL")
+            setIsLoading(false)
         }
         console.log("ERROR LAUNCH ANVIL HERE")
+        setIsLoading(false)
     } catch(err) {
         console.log("ERROR LAUNCH ANVIL")
         console.log(err.response.data)
@@ -58,6 +63,7 @@ export default function KubecontextModal({isPackaged, initialLaunch}) {
         console.log(errorMessages)
         setErrMessage(errorMessages)
         setIsOpen(true)
+        setIsLoading(false)
 
     }
 
@@ -77,7 +83,11 @@ export default function KubecontextModal({isPackaged, initialLaunch}) {
 
 return (   <>
           <Dropdown items={availableKubeContextsAtom} onChange={handleSelection}/>
-          <Button onClick={submit} disabled={!isPackaged || currentKubeContext == ''} >Save & Relaunch</Button>
+          <Button onClick={submit} disabled={!isPackaged || currentKubeContext == ''} >
+            <Loading active={loading} />
+            Save & Relaunch
+            </Button>
+          
           <div className='err-modal'>
           <ClosableModal
         modalHeading="The following error(s) occurred:"
