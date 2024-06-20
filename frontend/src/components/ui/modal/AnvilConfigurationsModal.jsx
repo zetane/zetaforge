@@ -16,16 +16,25 @@ import {
   TableRow,
   TableSelectRow,
   TextInput,
+  Tab,
+  Tabs,
+  TabList,
+  TabPanel,
+  TabPanels,
+  Tooltip
 } from "@carbon/react";
 import { useAtom } from "jotai";
-import ClosableModal from "./ClosableModal";
+import ClosableModal  from "./ClosableModal";
+import KubecontextModal from "./KubecontextModal";
 import { Add, TrashCan } from "@carbon/icons-react";
 import { useState } from "react";
-import LaunchAnvilButton from "./LaunchAnvilButton";
+import { isPackaged } from "@/atoms/kubecontextAtom";
 
-export default function AnvilConfigurationsModal() {
+ 
+export default function AnvilConfigurationsModal({initialLaunch}) {
   const [defaultAnvilConfiguration] = useAtom(defaultAnvilConfigurationAtom);
   const [userAnvilConfigurations] = useAtom(userAnvilConfigurationsAtom);
+  const [appIsPackaged] = useAtom(isPackaged)
 
   const defaultRows = [defaultAnvilConfiguration].map((c) => ({
     configuration: c,
@@ -41,25 +50,57 @@ export default function AnvilConfigurationsModal() {
     selectIndex: i,
   }));
 
+  console.log("HAVE TO CHECK THIS PART")
+  console.log(initialLaunch)
+  console.log(appIsPackaged)
+  if(initialLaunch === true && appIsPackaged === false) {
+    return (<></>)
+  }
+  
+  if(initialLaunch === true && appIsPackaged === true) {
+    console.log("INITIAL LAUNCH MODAL")
+    return (<ClosableModal modalHeading="Anvil Configurations" size="md" passiveModal>
+      <KubecontextModal isPackaged={appIsPackaged}/>
+    </ClosableModal>  )
+  }
+  //Non-initial Launches are handled within KubeContext Modal
+
+
   return (
-    <ClosableModal modalHeading="Anvil Configurations" size="md" passiveModal>
-      <Table>
-        <TableHead>
-          <TableRow>
-            <TableHeader />
-            <TableHeader>Name</TableHeader>
-            <TableHeader>Host</TableHeader>
-            <TableHeader>Anvil Port</TableHeader>
-            <TableHeader>S3 Port</TableHeader>
-            <TableHeader />
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          <ConfigRows rows={rows} />
-          <AddRow />
-        </TableBody>
-      </Table>
-      <LaunchAnvilButton />
+    <ClosableModal modalHeading="Anvil Configurations" size="md" passiveModal initialLaunch={false}>
+      <Tabs>
+        <TabList>
+          <Tab>
+            Anvil Configurations
+          </Tab>
+          <Tab disabled={!appIsPackaged} >
+          Set KubeContext
+          </Tab> 
+        </TabList>
+        <TabPanels>
+          <TabPanel>
+              <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeader />
+                <TableHeader>Name</TableHeader>
+                <TableHeader>Host</TableHeader>
+                <TableHeader>Anvil Port</TableHeader>
+                <TableHeader>S3 Port</TableHeader>
+                <TableHeader />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              <ConfigRows rows={rows} />
+              <AddRow />
+            </TableBody>
+          </Table>
+          </TabPanel>
+          <TabPanel>
+            <KubecontextModal isPackaged={appIsPackaged} initialLaunch={false}/>
+          </TabPanel>
+        </TabPanels>      
+      </Tabs>
     </ClosableModal>
   );
 }

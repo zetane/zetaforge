@@ -108,7 +108,7 @@ export default function Navbar({ children }) {
             <span>API Keys</span>
           </HeaderMenuItem>
           <HeaderMenuItem
-            onClick={() => modalPopper(<AnvilConfigurationsModal />)}>
+            onClick={() => modalPopper(<AnvilConfigurationsModal initialLaunch={false}/>)}>
             Anvil Configurations
           </HeaderMenuItem>
           <HeaderMenuItem label="Theme" onClick={() => setDarkMode(!darkMode)}>

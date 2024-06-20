@@ -8,6 +8,7 @@ import { getHistory, getIndex, updateHistory, updateIndex } from "./chat.js";
 import { readPipelines, readSpecs } from "./fileSystem.js";
 import { copyPipeline, executePipeline, getBlockPath, removeBlock, saveBlock, saveSpec } from './pipelineSerialization.js';
 import { publicProcedure, router } from './trpc';
+import { availableKubeContexts } from "@/atoms/kubecontextAtom.js";
 
 export const appRouter = router({
   getBlocks: publicProcedure

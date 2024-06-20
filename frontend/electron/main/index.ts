@@ -9,8 +9,15 @@ import { fileURLToPath } from 'node:url';
 import "../../polyfill/crypto";
 import { startExpressServer } from "../../server/express.mjs";
 import { update } from './update';
+import config from '../../config'
+import path from "path";
+import fs, { readFileSync } from "fs";
 
 Sentry.init({ dsn: "https://7fb18e8e487455a950298625457264f3@o1096443.ingest.us.sentry.io/4507031960223744" });
+
+console.log("CHECK HERE333333")
+console.log(process.resourcesPath)
+
 
 
 const __filename = fileURLToPath(import.meta.url)
@@ -64,6 +71,7 @@ let win: BrowserWindow | null = null
 const preload = join(__dirname, '../preload/index.mjs')
 const url = process.env.VITE_DEV_SERVER_URL
 const indexHtml = join(process.env.DIST, 'index.html')
+
 
 const isMac = process.platform === 'darwin'
 const menuTemplate: Electron.MenuItemConstructorOptions[] = [
@@ -176,10 +184,14 @@ app.on('activate', () => {
   const allWindows = BrowserWindow.getAllWindows()
   if (allWindows.length) {
     allWindows[0].focus()
+    allWindows[0].webContents.send('missing-config')
   } else {
     createWindow()
+    win?.webContents.send('missing-config')
   }
 })
+
+
 
 
 startExpressServer();
