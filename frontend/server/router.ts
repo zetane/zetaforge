@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { compileComputation, runTest, saveBlockSpecs } from './blockSerialization.js';
 import { getHistory, getIndex, updateHistory, updateIndex } from "./chat.js";
 import { readPipelines, readSpecs } from "./fileSystem.js";
-import { copyPipeline, executePipeline, getBlockPath, removeBlock, saveBlock, saveSpec, uploadBlocks } from './pipelineSerialization.js';
+import { copyPipeline, executePipeline, getBlockPath, removeBlock, saveBlock, saveSpec } from './pipelineSerialization.js';
 import { publicProcedure, router } from './trpc';
 
 export const appRouter = router({
@@ -195,9 +195,9 @@ export const appRouter = router({
       
       try {
         return await executePipeline(id, executionId, specs, path, buffer, name, rebuild, anvilConfiguration);
-      } catch (error) {
+      } catch (error: unknown) {
         const message = "Could not execute the pipeline"
-        console.error(message, error, error.stack)
+        console.error(message, error, (error as Error).stack)
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: message,

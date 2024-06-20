@@ -193,7 +193,7 @@ export async function executePipeline(
 
   await uploadBuildContexts(anvilHostConfiguration, specs, buffer);
 
-  await createExecution(anvilHostConfiguration, executionId, specs, rebuild);
+  return await createExecution(anvilHostConfiguration, executionId, specs, rebuild);
 }
 
 async function uploadBlocks(
