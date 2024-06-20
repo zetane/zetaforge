@@ -1,8 +1,6 @@
 import os
-
 import cv2
 from PIL import Image
-
 
 def compute(image_path, range_min, range_max, step):
     """

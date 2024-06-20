@@ -297,14 +297,14 @@ export default function DirectoryViewer({
     return (
       <TreeNode
         key={folder}
+        onClick={() =>
+          folderData.type === "folder"
+            ? onToggle(currentPath)
+            : handleFileClick(currentPath)
+        }
         label={
           <span
             style={textStyle}
-            onClick={() =>
-              folderData.type === "folder"
-                ? onToggle(currentPath)
-                : handleFileClick(currentPath)
-            }
           >
             {folder}
           </span>

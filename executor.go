@@ -223,25 +223,6 @@ func deleteFiles(ctx context.Context, prefix string, extraFiles []string, cfg Co
 	}
 }
 
-func history(sinkPath string) error {
-	if err := os.MkdirAll(sinkPath, 0755); err != nil {
-		return err
-	}
-	if err := os.Mkdir(filepath.Join(sinkPath, "files"), 0755); err != nil {
-		return err
-	}
-	if err := os.Mkdir(filepath.Join(sinkPath, "pipeline"), 0755); err != nil {
-		return err
-	}
-	if err := os.Mkdir(filepath.Join(sinkPath, "logs"), 0755); err != nil {
-		return err
-	}
-	if err := os.Mkdir(filepath.Join(sinkPath, "results"), 0755); err != nil {
-		return err
-	}
-	return nil
-}
-
 func writeFile(path string, content string) error {
 	file, err := os.Create(path)
 	if err != nil {
@@ -533,6 +514,12 @@ func terminateArgo(ctx context.Context, client clientcmd.ClientConfig, db *sql.D
 	})
 	if err != nil {
 		log.Printf("Failed to get workflow %s; err=%v", name, err)
+		updateErr := updateExecutionStatus(ctx, db, id, "Failed")
+
+		if updateErr != nil {
+			log.Printf("Failed to update execution status for workflow %s; err=%v", name, err)
+		}
+
 		return err
 	}
 
@@ -830,7 +817,8 @@ func cleanupRun(ctx context.Context, db *sql.DB, executionId int64, executionUui
 		log.Printf("Failed to save results; err=%v", err)
 	}
 
-	if err := downloadFiles(ctx, pipeline.Sink, s3Key, cfg); err != nil {
+	sink := filepath.Join(pipeline.Sink, "history", executionUuid)
+	if err := downloadFiles(ctx, sink, s3Key, cfg); err != nil {
 		log.Printf("Failed to download files; err=%v", err)
 	}
 }
@@ -868,4 +856,34 @@ func cloudExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 		log.Printf("Error during pipeline execution; err=%v", err)
 		return
 	}
+}
+
+func getBuildContextStatus(pipeline *zjson.Pipeline, cfg Config) []zjson.BuildContextStatus {
+	context := context.Background()
+	var buildContextStatus []zjson.BuildContextStatus
+	for id, block := range pipeline.Pipeline {
+		if len(block.Action.Container.Image) > 0 && !cfg.IsLocal {
+			image := getImage(&block)
+			status, err := checkImage(context, image, cfg)
+			s3Key := getKanikoBuildContextS3Key(&block, "org")
+
+			if err != nil {
+				log.Printf("Failed to get build context status; err=%v", err)
+				return buildContextStatus
+			}
+
+			buildContextStatus = append(buildContextStatus, zjson.BuildContextStatus{
+				BlockKey:   id,
+				IsUploaded: status,
+				S3Key:      s3Key,
+			})
+		} else {
+			buildContextStatus = append(buildContextStatus, zjson.BuildContextStatus{
+				BlockKey:   id,
+				IsUploaded: true,
+				S3Key:      "",
+			})
+		}
+	}
+	return buildContextStatus
 }

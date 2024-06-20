@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"path/filepath"
 
 	"server/zjson"
@@ -11,12 +14,18 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/go-cmd/cmd"
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+type Catalog struct {
+	Repositories []string `json:"repositories"`
+}
+
+type TagList struct {
+	Name string   `json:"name"`
+	Tags []string `json:"tags"`
+}
 
 func checkImage(ctx context.Context, tag string, cfg Config) (bool, error) {
 	if cfg.IsLocal {
@@ -54,28 +63,85 @@ func checkImage(ctx context.Context, tag string, cfg Config) (bool, error) {
 
 			return false, nil
 		}
+	} else if cfg.Cloud.IsDebug {
+		response, err := http.Get(fmt.Sprintf("http://localhost:%d/v2/_catalog", cfg.Cloud.RegistryPort))
+		if err != nil {
+			return false, err
+		}
+
+		defer response.Body.Close()
+
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			return false, err
+		}
+
+		var catalog Catalog
+		if err := json.Unmarshal(body, &catalog); err != nil {
+			return false, err
+		}
+
+		for _, name := range catalog.Repositories {
+			response, err := http.Get(fmt.Sprintf("http://localhost:%d/v2/%s/tags/list", cfg.Cloud.RegistryPort, name))
+			if err != nil {
+				return false, err
+			}
+
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				return false, err
+			}
+			var tagList TagList
+			if err := json.Unmarshal(body, &tagList); err != nil {
+				return false, err
+			}
+			for _, tagName := range tagList.Tags {
+				expectedTagName := fmt.Sprintf("localhost:5000/%s:%s", name, tagName)
+				if tag == expectedTagName {
+					return true, nil
+				}
+			}
+		}
+
+		return false, nil
 	} else {
-		repo, err := name.NewRepository(cfg.Cloud.RegistryAddr)
+		response, err := http.Get("http://registry:5000/v2/_catalog")
 		if err != nil {
 			return false, err
 		}
 
-		auth := authn.FromConfig(
-			authn.AuthConfig{
-				Username: cfg.Cloud.RegistryUser,
-				Password: cfg.Cloud.RegistryPass,
-			},
-		)
+		defer response.Body.Close()
 
-		data, err := remote.List(repo, remote.WithAuth(auth))
-
+		body, err := io.ReadAll(response.Body)
 		if err != nil {
 			return false, err
 		}
 
-		for _, tagName := range data {
-			if tag == cfg.Cloud.RegistryAddr+":"+tagName {
-				return true, nil
+		var catalog Catalog
+		if err := json.Unmarshal(body, &catalog); err != nil {
+			return false, err
+		}
+
+		for _, name := range catalog.Repositories {
+			response, err := http.Get("http://registry:5000/v2/" + name + "/tags/list")
+			if err != nil {
+				return false, err
+			}
+
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				return false, err
+			}
+			var tagList TagList
+			if err := json.Unmarshal(body, &tagList); err != nil {
+				return false, err
+			}
+			for _, tagName := range tagList.Tags {
+				if tag == "localhost:31111/"+name+":"+tagName {
+					return true, nil
+				}
 			}
 		}
 
@@ -84,15 +150,14 @@ func checkImage(ctx context.Context, tag string, cfg Config) (bool, error) {
 }
 
 func blockTemplate(block *zjson.Block, blockKey string, organization string, key string, cfg Config) *wfv1.Template {
-	var image string
-	var computationName string
+	image := getImage(block)
 	if cfg.IsLocal {
-		image = "zetaforge/" + block.Action.Container.Image + ":" + block.Action.Container.Version
-		computationName = blockKey + ".py"
+		image = "zetaforge/" + image
 	} else {
-		image = cfg.Cloud.RegistryAddr + ":" + organization + "-" + block.Action.Container.Image + "-" + block.Action.Container.Version
-		computationName = organization + "-" + blockKey + ".py"
+		image = fmt.Sprintf("localhost:%d/%s", cfg.Cloud.RegistryPort, image)
 	}
+
+	computationName := getComputaionName(blockKey, organization, cfg)
 	entrypoint := wfv1.Artifact{
 		Name: "entrypoint",
 		Path: cfg.WorkDir + "/" + cfg.EntrypointFile,
@@ -134,14 +199,50 @@ func blockTemplate(block *zjson.Block, blockKey string, organization string, key
 func kanikoTemplate(block *zjson.Block, organization string, cfg Config) *wfv1.Template {
 	if cfg.IsLocal {
 		return nil
+	} else if cfg.Cloud.IsDebug {
+		name := getKanikoTemplateName(block, organization)
+		tag := getImage(block)
+		image := fmt.Sprintf("registry:%d/%s", cfg.Cloud.RegistryPort, tag)
+		cmd := []string{
+			"/kaniko/executor",
+			"--context",
+			"dir:///workspace/context",
+			"--destination",
+			image,
+			"--insecure",
+			"--compressed-caching=false",
+			"--snapshotMode=redo",
+			"--use-new-run",
+		}
+		artifact := wfv1.Artifact{
+			Name: "context",
+			Path: "/workspace/context",
+			ArtifactLocation: wfv1.ArtifactLocation{
+				S3: &wfv1.S3Artifact{
+					Key: getKanikoBuildContextS3Key(block, organization),
+				},
+			},
+			Archive: &wfv1.ArchiveStrategy{
+				None: &wfv1.NoneStrategy{},
+			},
+		}
+		return &wfv1.Template{
+			Name: name + "-build",
+			Container: &corev1.Container{
+				Image:   cfg.KanikoImage,
+				Command: cmd,
+			},
+			Inputs: wfv1.Inputs{Artifacts: []wfv1.Artifact{artifact}},
+		}
 	} else {
-		name := organization + "-" + block.Action.Container.Image + "-" + block.Action.Container.Version
+		name := getKanikoTemplateName(block, organization)
+		image := cfg.Cloud.RegistryAddr + ":" + getImage(block)
 		cmd := []string{
 			"/kaniko/executor",
 			"--context",
 			"tar:///workspace/context.tar.gz",
 			"--destination",
-			cfg.Cloud.RegistryAddr + ":" + name,
+			image,
 			"--compressed-caching=false",
 			"--snapshotMode=redo",
 			"--use-new-run",
@@ -161,10 +262,10 @@ func kanikoTemplate(block *zjson.Block, organization string, cfg Config) *wfv1.T
 			Inputs: wfv1.Inputs{Artifacts: []wfv1.Artifact{
 				{
 					Name: "context",
-					Path: "/workspace/context.tar.gz",
+					Path: "/workspace/context",
 					ArtifactLocation: wfv1.ArtifactLocation{
 						S3: &wfv1.S3Artifact{
-							Key: name + "-build.tar.gz",
+							Key: getKanikoBuildContextS3Key(block, organization),
 						},
 					},
 					Archive: &wfv1.ArchiveStrategy{
@@ -292,7 +393,7 @@ func translate(ctx context.Context, pipeline *zjson.Pipeline, organization strin
 		}
 
 		var filesName string
-		if cfg.IsLocal {
+		if cfg.IsLocal || cfg.Cloud.IsDebug {
 			filesName = key
 		} else {
 			filesName = organization + "/" + key
@@ -354,4 +455,24 @@ func translate(ctx context.Context, pipeline *zjson.Pipeline, organization strin
 	workflow.Spec.Templates = append(workflow.Spec.Templates, dag)
 
 	return &workflow, blocks, nil
+}
+
+func getImage(block *zjson.Block) string {
+	return block.Action.Container.Image + ":" + block.Action.Container.Version
+}
+
+func getComputaionName(blockKey string, organization string, cfg Config) string {
+	if cfg.IsLocal || cfg.Cloud.IsDebug {
+		return blockKey + ".py"
+	} else {
+		return organization + "-" + blockKey + ".py"
+	}
+}
+
+func getKanikoTemplateName(block *zjson.Block, organization string) string {
+	return organization + "-" + block.Action.Container.Image + "-" + block.Action.Container.Version
+}
+
+func getKanikoBuildContextS3Key(block *zjson.Block, organization string) string {
+	return getKanikoTemplateName(block, organization) + "-build"
 }

@@ -101,7 +101,9 @@ To experience ZetaForge in action, start by dragging and dropping a core pipelin
 
 ## Documentation
 
-Explore our [official documentation](https://zetane.com/docs/) for a guide on using ZetaForge. Learn how to create your own ZetaForge blocks, assemble custom pipelines, and more. You'll also find tutorials and best practices to enhance your ZetaForge experience.
+Explore our [official documentation](https://zetane.com/docs/) for a guide on using ZetaForge. Learn how to create your own ZetaForge blocks, assemble custom pipelines, and more. You'll also find tutorials and best practices to enhance your ZetaForge experience. 
+
+If you prefer reading a blog instead, check out our 3-part blog on [Medium](https://medium.com/zetane-blog/create-your-multimedia-ai-generated-storybook-with-zetaforge-part-i-9aae9860a493) that goes through the motivation as well as many technical details through an exciting example: **Create Your Multimedia AI-generated Storybook with ZetaForge** ([Part I](https://medium.com/zetane-blog/create-your-multimedia-ai-generated-storybook-with-zetaforge-part-i-9aae9860a493), [Part II](https://medium.com/zetane-blog/zetaforge-use-case-example-a-multimedia-ai-generated-storybook-part-ii-4668c2d9360d), [Part III](https://medium.com/zetane-blog/zetaforge-use-case-example-a-multimedia-ai-generated-storybook-part-iii-6b79f60c5a56))!
 
 
 ## Pipeline Gallery

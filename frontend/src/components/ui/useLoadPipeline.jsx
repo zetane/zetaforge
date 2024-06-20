@@ -161,9 +161,6 @@ export const useLoadServerPipeline = () => {
       pipelineData = JSON.parse(pipeline.Results)
     }
     let logs = pipeline?.Log
-    if (pipeline.LogPath) {
-      //logs = getFileData(pipeline.LogPath, configuration)
-    }
     const bufferPath = `${window.cache.local}${pipelineData.id}`;
     const executionId = pipeline.Execution
 
@@ -181,7 +178,7 @@ export const useLoadServerPipeline = () => {
     }
 
     let newPipeline = pipelineFactory(window.cache.local, loadedPipeline)
-    if (newPipeline.logs != null && newPipeline.logs.length) {
+    if (newPipeline?.logs != null && newPipeline.logs.length) {
       try {
         const parsedLog = parseLog(newPipeline?.logs)
         newPipeline.log = parsedLog

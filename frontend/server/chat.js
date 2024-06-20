@@ -1,10 +1,31 @@
 import fs from "fs/promises";
 import path from "path";
 import { fileExists, readJsonToObject } from "./fileSystem";
+import z from "zod"
 
 const CHAT_HISTORY_FILE_NAME = "chatHistory.json";
 const COMPUTATIONS_FILE_NAME = "computations.py";
 const START_PROMPT = "Code Template";
+
+const schema = z.object({
+  index: z.number(),
+  history: z.array(
+    z.object({
+      timestamp: z.number(),
+      prompt: z.string(),
+      response: z.string(),
+    })
+  )
+})
+
+const legacySchema = z.array(
+  z.object({
+    timestamp: z.number(),
+    prompt: z.string(),
+    response: z.string(),
+  })
+)
+
 
 export async function getHistory(blockPath) {
   const chat = await getChat(blockPath);
@@ -32,17 +53,42 @@ export async function updateIndex(blockPath, newIndex) {
 
 async function getChat(blockPath) {
   const chatPath = path.join(blockPath, CHAT_HISTORY_FILE_NAME);
-  let chat = undefined;
-  if ((await fileExists(chatPath))) {
-    chat = await readJsonToObject(chatPath);
-  } else {
-    chat = (await createChat(blockPath));
+
+  if (!(await fileExists(chatPath))) {
+    const chat = await createDefaultChat(blockPath);
     await fs.writeFile(chatPath, JSON.stringify(chat, null, 2));
+    return chat
   }
-  return chat
+  
+  let fileContent;
+  try {
+    fileContent = await readJsonToObject(chatPath);
+  } catch {
+    const chat = await createDefaultChat(blockPath);
+    await fs.writeFile(chatPath, JSON.stringify(chat, null, 2));
+    return chat
+  }
+
+  const result = schema.safeParse(fileContent)
+  if(!result.success) {
+    const chat = await handleInvalidSchema(fileContent, blockPath);
+    await fs.writeFile(chatPath, JSON.stringify(chat, null, 2));
+    return chat;
+  }
+
+  return result.data
 }
 
-async function createChat(blockPath) {
+async function handleInvalidSchema(fileContent, blockPath) {
+  const result = legacySchema.safeParse(fileContent)
+  if (result.success) {
+    return await upgradeChatHistory(fileContent, blockPath)
+  } 
+  
+  return await createDefaultChat(blockPath)
+}
+
+async function createDefaultChat(blockPath) {
   const codeTemplatePath = path.join(blockPath, COMPUTATIONS_FILE_NAME);
   const codeTemplate = await fs.readFile(codeTemplatePath, "utf8");
   const chatHistory = {
@@ -54,3 +100,35 @@ async function createChat(blockPath) {
   }]};
   return chatHistory; 
 }
+
+async function upgradeChatHistory(history, blockPath) {
+  const codeTemplatePath = path.join(blockPath, COMPUTATIONS_FILE_NAME);
+  const currentCode = await fs.readFile(codeTemplatePath, "utf8");
+
+  let codeIndex = -1
+  for (let [index, value] of history.entries()) {
+    if (value.response == currentCode) {
+      codeIndex = index
+    }
+  }
+
+  if (codeIndex === -1) {
+    history = [
+      ...history,
+      {
+        timestamp: Date.now(),
+        prompt: START_PROMPT,
+        response: currentCode,
+      }
+    ]
+    codeIndex = history.length - 1
+  }
+
+
+  const chatHistory = {
+    index: codeIndex,
+    history: history 
+  };
+  return chatHistory; 
+}
+

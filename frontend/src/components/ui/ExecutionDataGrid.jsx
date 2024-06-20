@@ -41,7 +41,7 @@ export const ExecutionDataGrid = ({executions, closeModal}) => {
         name: <Link href="#" onClick={() => {selectPipeline(pipeline)}}>{executionId}</Link>,
         created: new Date(record?.ExecutionTime * 1000).toLocaleString(),
         status: record?.Status,
-        deployed: record?.Deployed,
+        deployed: (record?.Deployed ? "True" : "False"),
         actions: stopAction,
       });
     }

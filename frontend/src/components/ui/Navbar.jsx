@@ -52,12 +52,13 @@ export default function Navbar({ children }) {
     const pipelines = data ?? []
     setWorkspace((draft) => {
       for (const serverPipeline of pipelines) {
-        const loaded = loadPipeline(serverPipeline, configuration)
-        const key = loaded.id + "." + loaded.record.Execution
+        const key = serverPipeline.Uuid + "." + serverPipeline.Execution
         const current = workspace.pipelines[key]
-        if (current?.record.Results || current?.record?.Status == "Failed" || current?.record?.Status == "Succeeded" || current?.record?.Status == "Error") {
+        const status = current?.record?.Status
+        if (current?.record?.Results || status == "Failed" || status == "Succeeded" || status == "Error") {
           continue
         }
+        const loaded = loadPipeline(serverPipeline, configuration)
         draft.pipelines[key] = loaded
         draft.executions[loaded.record.Execution] = loaded
       }

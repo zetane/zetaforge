@@ -1,6 +1,8 @@
 import { HeadObjectCommand, PutObjectCommand, GetObjectCommand, CopyObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import fs from 'fs/promises';
 import config from "../config";
+import { getDirectoryFilesRecursive } from "./fileSystem";
+import path from "path";
 
 function getClient(configuration) {
   const endpoint = `http://${configuration.host}:${configuration.s3Port}`;
@@ -28,9 +30,8 @@ export async function checkAndCopy(newKey, copyKey, anvilConfiguration) {
 
 async function copy(newKey, copyKey, anvilConfiguration) {
   const client = getClient(anvilConfiguration);
+  const source = encodeURI(`/${config.s3.bucket}/${copyKey}`)
   try {
-    const source = encodeURI(`/${config.s3.bucket}/${copyKey}`)
-
     const res = await client.send(new CopyObjectCommand({
       Bucket: config.s3.bucket,
       CopySource: source,
@@ -53,11 +54,21 @@ export async function checkAndUpload(key, filePath, anvilConfiguration) {
   }
 }
 
+export async function uploadDirectory(key, diretoryPath, anvilConfiguration) {
+  const files = await getDirectoryFilesRecursive(diretoryPath);
+  await Promise.all(files
+    .map(f => upload(
+      `${key}/${f.replace(path.sep, "/")}`,
+      path.join(diretoryPath, f),
+      anvilConfiguration
+    )))
+}
+
 async function upload(key, filePath, anvilConfiguration) {
   const client = getClient(anvilConfiguration);
-  const fileBody = await fs.readFile(filePath)
 
   try {
+    const fileBody = await fs.readFile(filePath)
     const res = await client.send(new PutObjectCommand({
       Bucket: config.s3.bucket,
       Key: key,
@@ -66,7 +77,7 @@ async function upload(key, filePath, anvilConfiguration) {
     return res
   } catch (err) {
     const message = 'Could not upload file to S3';
-    console.error(message, err);
+    console.error(message, err, err.stack);
     throw new Error(message);
   }
 }
@@ -85,7 +96,7 @@ async function fileExists(key, anvilConfiguration) {
       return false;
     }
     const message = 'Error checking file existence in S3';
-    console.error(message, err);
+    console.error(message, err, err.stack);
     throw new Error(message);
   }
 }
@@ -114,7 +125,8 @@ export async function getFileData(key, anvilConfiguration) {
   }
 }
 
-export async function getFile(key, destinationPath) {
+export async function getFile(key, destinationPath, anvilConfiguration) {
+  const client = getClient(anvilConfiguration);
   try {
     const response = await client.send(new GetObjectCommand({
       Bucket: config.s3.bucket,

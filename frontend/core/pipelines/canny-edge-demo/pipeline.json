@@ -14,7 +14,7 @@
       },
       "inputs": {
         "image_path": {
-          "type": "file",
+          "type": "Any",
           "connections": [
             {
               "variable": "path",
@@ -24,7 +24,7 @@
           "relays": []
         },
         "range_min": {
-          "type": "int",
+          "type": "Any",
           "connections": [
             {
               "variable": "integer",
@@ -34,7 +34,7 @@
           "relays": []
         },
         "range_max": {
-          "type": "int",
+          "type": "Any",
           "connections": [
             {
               "variable": "integer",
@@ -44,7 +44,7 @@
           "relays": []
         },
         "step": {
-          "type": "int",
+          "type": "Any",
           "connections": [
             {
               "variable": "integer",
@@ -56,7 +56,7 @@
       },
       "outputs": {
         "image_paths": {
-          "type": "List[file]",
+          "type": "Any",
           "connections": [
             {
               "variable": "image_paths_view",
@@ -196,7 +196,7 @@
       "inputs": {},
       "outputs": {
         "integer": {
-          "type": "int",
+          "type": "Any",
           "connections": [
             {
               "variable": "range_max",
@@ -209,7 +209,7 @@
       "action": {
         "parameters": {
           "integer": {
-            "type": "int",
+            "type": "Any",
             "value": "500"
           }
         }
@@ -242,7 +242,7 @@
       "inputs": {},
       "outputs": {
         "integer": {
-          "type": "int",
+          "type": "Any",
           "connections": [
             {
               "variable": "step",
@@ -255,7 +255,7 @@
       "action": {
         "parameters": {
           "integer": {
-            "type": "int",
+            "type": "Any",
             "value": "20"
           }
         }

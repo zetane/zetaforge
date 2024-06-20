@@ -31,7 +31,7 @@ export default function ComputationsFileEditor({ fetchFileSystem }) {
   const [openAIApiKey] = useAtom(openAIApiKeyAtom);
   const [pipeline, setPipeline] = useImmerAtom(pipelineAtom);
   const [editor] = useAtom(drawflowEditorAtom);
-  const [compilationErrorToast, setCompilationErrorToast] = useAtom(compilationErrorToastAtom)
+  const [,setCompilationErrorToast] = useAtom(compilationErrorToastAtom)
 
   const [agentName, setAgent] = useState("gpt-4_python_compute");
 

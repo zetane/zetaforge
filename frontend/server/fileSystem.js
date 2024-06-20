@@ -125,3 +125,16 @@ export async function withFileSystemRollback(restorablePaths, workFunction) {
     await fs.rm(tempDirectory, { recursive: true });
   }
 }
+
+export async function getDirectoryFilesRecursive(directoryPath) {
+  const dirents = await fs.readdir(directoryPath, { recursive: true })
+  const stats = await Promise.all(dirents
+    .map(f  => {
+      const absolutePath = path.join(directoryPath, f)
+      return Promise.all([fs.stat(absolutePath), f])
+    }))
+  const files = stats
+    .filter(([s, ]) => s.isFile())
+    .map(([, f]) => f)
+  return files
+}

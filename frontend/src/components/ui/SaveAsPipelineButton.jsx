@@ -15,29 +15,29 @@ export default function SaveAsPipelineButton() {
     try {
       mixpanelService.trackEvent('Save Pipeline')
       } catch(err) {
-  
+
       }
     const pipelineSpecs = editor.convert_drawflow_to_block(pipeline.name, pipeline.data);
     // If a pipeline is loaded, pipeline.path will be set to the load path
     // If it isn't set, electron will pop a file picker window
     // The response from the server after saving will contain that new path
     pipelineSpecs['sink'] = pipeline.path ? pipeline.path : pipeline.buffer
-    pipelineSpecs['build'] = pipeline.path ? pipeline.path : pipeline.buffer
+    pipelineSpecs['build'] = pipeline.buffer
     pipelineSpecs['name'] = pipeline.name
     pipelineSpecs['id'] = pipeline.id
     const saveData = {
-      specs: pipelineSpecs, 
-      name: pipeline.name, 
+      specs: pipelineSpecs,
+      name: pipeline.name,
       buffer: pipeline.buffer,
       writePath: undefined
     }
     const response = await savePipeline.mutateAsync(saveData)
-    const {dirPath, specs} = response
+    const {name, dirPath, specs} = response
 
     setPipeline((draft) => {
       draft.saveTime = Date.now()
-      if (specs) {
-        draft.name = specs.split(".")[0]
+      if (name) {
+        draft.name = name
       }
       if (dirPath) {
         draft.path = dirPath

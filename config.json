@@ -15,5 +15,10 @@
 	"Local": {
 		"BucketPort": 8333,
 		"Driver": "docker-desktop"
+	},
+
+	"Cloud": {
+		"RegistryPort": 5000,
+		"IsDebug": true
 	}
 } 

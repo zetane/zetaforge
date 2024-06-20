@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { compileComputation, runTest, saveBlockSpecs } from './blockSerialization.js';
 import { getHistory, getIndex, updateHistory, updateIndex } from "./chat.js";
 import { readPipelines, readSpecs } from "./fileSystem.js";
-import { copyPipeline, getBlockPath, removeBlock, saveBlock, saveSpec, uploadBlocks } from './pipelineSerialization.js';
+import { copyPipeline, executePipeline, getBlockPath, removeBlock, saveBlock, saveSpec, uploadBlocks } from './pipelineSerialization.js';
 import { publicProcedure, router } from './trpc';
 
 export const appRouter = router({
@@ -107,6 +107,7 @@ export const appRouter = router({
           writePath = savePath.filePath
           specs['sink'] = writePath
           specs['build'] = writePath
+          specs['name'] = name
 
           if (writePath) {
             try {
@@ -123,7 +124,7 @@ export const appRouter = router({
 
       if (writePath) {
         const savePaths = await copyPipeline(specs, buffer, writePath);
-        return savePaths;
+        return { name: name, ...savePaths };
       }
 
       return {}
@@ -172,12 +173,15 @@ export const appRouter = router({
       const { blockId, pipelinePath } = input;
       removeBlock(blockId, pipelinePath);
     }),
-  uploadParameterBlocks: publicProcedure
+  executePipeline: publicProcedure
     .input(z.object({
-      pipelineId: z.string(),
+      id: z.string(),
       executionId: z.string(),
-      pipelineSpecs: z.any(),
+      specs: z.any(),
+      path: z.string().optional(),
       buffer: z.string(),
+      name: z.string(),
+      rebuild: z.boolean(),
       anvilConfiguration: z.object({
         name: z.string(),
         host: z.string(),
@@ -187,9 +191,18 @@ export const appRouter = router({
     }))
     .mutation(async (opts) => {
       const { input } = opts;
-      const { pipelineId, executionId, pipelineSpecs, buffer, anvilConfiguration } = input;
-
-      return uploadBlocks(pipelineId, executionId, pipelineSpecs, buffer, anvilConfiguration);
+      const { id, executionId, specs, path, buffer, name, rebuild, anvilConfiguration } = input;
+      
+      try {
+        return await executePipeline(id, executionId, specs, path, buffer, name, rebuild, anvilConfiguration);
+      } catch (error) {
+        const message = "Could not execute the pipeline"
+        console.error(message, error, error.stack)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: message,
+        });
+      }
     }),
   compileComputation: publicProcedure
     .input(z.object({

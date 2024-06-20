@@ -127,6 +127,7 @@ const BlockTitle = ({ name, id, color, openView, actions, src, blockEvents, hist
   const eventsModal = (
     <ClosableModal
       modalHeading="Block Events"
+      passiveModal={true}
     >
       <div className="flex flex-col gap-4 p-3">
         {JSON.stringify(blockEvents, null, 2)}
