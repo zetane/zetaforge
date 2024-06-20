@@ -60,20 +60,11 @@ type Local struct {
 }
 
 type Cloud struct {
-	Registry     string
-	RegistryAddr string
-	RegistryPort int
-	IsDebug      bool
-	RegistryUser string
-	RegistryPass string
-	ClusterIP    string
-	Token        string
-	CaCert       string
-
 	Provider string
 	Registry string
 	Oracle   `json:"Oracle,omitempty"`
 	AWS      `json:"AWS,omitempty"`
+	Debug    `json:"Debug,omitempty"`
 }
 
 type WebSocketWriter struct {
@@ -324,7 +315,7 @@ func main() {
 		log.Fatalf("failed to migrate database; err=%v", err)
 	}
 
-	if config.IsLocal || config.Cloud.IsDebug {
+	if config.IsLocal || config.Cloud.Provider == "Debug" {
 		// Switching to Cobra if we need more arguments
 		if len(os.Args) > 1 {
 			if os.Args[1] == "--uninstall" {
@@ -402,7 +393,7 @@ func main() {
 			ctx.String(err.Status(), err.Error())
 			return
 		}
-		if config.IsLocal || config.Cloud.IsDebug {
+		if config.IsLocal || config.Cloud.Provider == "Debug" {
 			go localExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, db, hub)
 		} else {
 			go cloudExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, db, hub)
@@ -508,9 +499,9 @@ func main() {
 			return
 		}
 
-		argoErr := terminateArgo(ctx, client, db, res.Workflow.String, res.ID)
+		argoErr := terminateArgo(ctx, config, db, res.Workflow.String, res.ID)
 		if argoErr != nil {
-			ctx.String(500, fmt.Sprintf("%v", argoErr))
+			ctx.String(http.StatusInternalServerError, fmt.Sprintf("%v", argoErr))
 			return
 		}
 		response := newResponseExecutionsRow(res)
@@ -702,9 +693,9 @@ func main() {
 			ctx.String(err.Status(), err.Error())
 			return
 		}
-		argoErr := stopArgo(ctx, res.Uuid, client)
+		argoErr := stopArgo(ctx, res.Uuid, config)
 		if argoErr != nil {
-			ctx.String(500, fmt.Sprintf("%v", argoErr))
+			ctx.String(http.StatusInternalServerError, fmt.Sprintf("%v", argoErr))
 			return
 		}
 		ctx.Status(http.StatusOK)
@@ -740,7 +731,7 @@ func main() {
 			return
 		}
 
-		if config.IsLocal || config.Cloud.IsDebug {
+		if config.IsLocal || config.Cloud.Provider == "Debug" {
 			go localExecute(&pipeline, res.ID, executionId.String(), false, config, db, hub)
 		} else {
 			go cloudExecute(&pipeline, newExecution.ID, executionId.String(), false, config, db, hub)

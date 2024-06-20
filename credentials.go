@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
-	"log"
 	"net/url"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -38,6 +36,16 @@ type AWS struct {
 	CaCert        string
 	AccessKey     string
 	SecretKey     string
+}
+
+type Debug struct {
+	RegistryAddr string
+	RegistryPort int
+	RegistryUser string
+	RegistryPass string
+	ClusterIP    string
+	Token        string
+	CaCert       string
 }
 
 const BUCKET = "zetaforge"
@@ -106,11 +114,11 @@ func kubernetesClient(config Config) (clientcmd.ClientConfig, error) {
 		case "aws":
 			token, err := awsToken(context.TODO(), config)
 			if err != nil {
-				log.Fatalf("Failed to identify aws credentials; err=%v", err)
+				return client, err
 			}
 			cacert, err := base64.StdEncoding.DecodeString(config.Cloud.AWS.CaCert)
 			if err != nil {
-				log.Fatalf("Invalid CA certificate; err=%v", err)
+				return client, err
 			}
 
 			cfg := api.NewConfig()
@@ -132,7 +140,7 @@ func kubernetesClient(config Config) (clientcmd.ClientConfig, error) {
 		case "oracle":
 			cacert, err := base64.StdEncoding.DecodeString(config.Cloud.Oracle.CaCert)
 			if err != nil {
-				log.Fatalf("Invalid CA certificate; err=%v", err)
+				return client, err
 			}
 
 			cfg := api.NewConfig()
@@ -152,7 +160,11 @@ func kubernetesClient(config Config) (clientcmd.ClientConfig, error) {
 			client = clientcmd.NewDefaultClientConfig(*cfg, &clientcmd.ConfigOverrides{})
 			return client, nil
 		default:
-			return client, errors.New("Invalid Cloud Provider")
+			client = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+				clientcmd.NewDefaultClientConfigLoadingRules(),
+				&clientcmd.ConfigOverrides{},
+			)
+			return client, nil
 		}
 	}
 }
@@ -164,7 +176,7 @@ func registryAddress(config Config) string {
 	case "oracle":
 		return config.Cloud.Oracle.RegistryAddr
 	default:
-		return ""
+		return config.Cloud.Debug.RegistryAddr
 	}
 }
 
@@ -177,7 +189,7 @@ func registryAuth(config Config) authn.Authenticator {
 			},
 		)
 		return auth
-	default:
+	case "oracle":
 		auth := authn.FromConfig(
 			authn.AuthConfig{
 				Username: config.Cloud.Oracle.RegistryUser,
@@ -185,5 +197,7 @@ func registryAuth(config Config) authn.Authenticator {
 			},
 		)
 		return auth
+	default:
+		return authn.Anonymous
 	}
 }

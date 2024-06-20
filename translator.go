@@ -65,7 +65,7 @@ func checkImage(ctx context.Context, tag string, cfg Config) (bool, error) {
 
 			return false, nil
 		}
-	} else if cfg.Cloud.IsDebug {
+	} else if cfg.Cloud.Provider == "Debug" {
 		response, err := http.Get(fmt.Sprintf("http://localhost:%d/v2/_catalog", cfg.Cloud.RegistryPort))
 		if err != nil {
 			return false, err
@@ -133,8 +133,9 @@ func blockTemplate(block *zjson.Block, blockKey string, organization string, key
 	image := getImage(block)
 	if cfg.IsLocal {
 		image = "zetaforge/" + image
-	} else {
+	} else if cfg.Cloud.Provider == "Debug" {
 		image = fmt.Sprintf("localhost:%d/%s", cfg.Cloud.RegistryPort, image)
+	} else {
 		image = registryAddress(cfg) + ":" + organization + "-" + block.Action.Container.Image + "-" + block.Action.Container.Version
 	}
 
@@ -180,7 +181,7 @@ func blockTemplate(block *zjson.Block, blockKey string, organization string, key
 func kanikoTemplate(block *zjson.Block, organization string, cfg Config) *wfv1.Template {
 	if cfg.IsLocal {
 		return nil
-	} else if cfg.Cloud.IsDebug {
+	} else if cfg.Cloud.Provider == "Debug" {
 		name := getKanikoTemplateName(block, organization)
 		tag := getImage(block)
 		image := fmt.Sprintf("registry:%d/%s", cfg.Cloud.RegistryPort, tag)
@@ -217,13 +218,13 @@ func kanikoTemplate(block *zjson.Block, organization string, cfg Config) *wfv1.T
 		}
 	} else {
 		name := getKanikoTemplateName(block, organization)
-		image := cfg.Cloud.RegistryAddr + ":" + getImage(block)
+		image := registryAddress(cfg) + ":" + getImage(block)
 		cmd := []string{
 			"/kaniko/executor",
 			"--context",
 			"tar:///workspace/context.tar.gz",
 			"--destination",
-			registryAddress(cfg) + ":" + name,
+			image + ":" + name,
 			"--compressed-caching=false",
 			"--snapshotMode=redo",
 			"--use-new-run",
@@ -374,7 +375,7 @@ func translate(ctx context.Context, pipeline *zjson.Pipeline, organization strin
 		}
 
 		var filesName string
-		if cfg.IsLocal || cfg.Cloud.IsDebug {
+		if cfg.IsLocal || cfg.Cloud.Provider == "Debug" {
 			filesName = key
 		} else {
 			filesName = organization + "/" + key
@@ -443,7 +444,7 @@ func getImage(block *zjson.Block) string {
 }
 
 func getComputationName(blockKey string, organization string, cfg Config) string {
-	if cfg.IsLocal || cfg.Cloud.IsDebug {
+	if cfg.IsLocal || cfg.Cloud.Provider == "Debug" {
 		return blockKey + ".py"
 	} else {
 		return organization + "-" + blockKey + ".py"

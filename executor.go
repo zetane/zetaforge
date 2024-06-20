@@ -452,7 +452,13 @@ func deleteArgo(ctx context.Context, name string, cfg Config) {
 	}
 }
 
-func stopArgo(ctx context.Context, name string, client clientcmd.ClientConfig) error {
+func stopArgo(ctx context.Context, name string, cfg Config) error {
+	client, err := kubernetesClient(cfg)
+	if err != nil {
+		log.Printf("Failed to stop workflow %s; err=%v", name, err)
+		return err
+	}
+
 	ctx, cli, err := apiclient.NewClientFromOpts(
 		apiclient.Opts{
 			ClientConfigSupplier: func() clientcmd.ClientConfig {
@@ -488,7 +494,13 @@ func stopArgo(ctx context.Context, name string, client clientcmd.ClientConfig) e
 	return nil
 }
 
-func terminateArgo(ctx context.Context, client clientcmd.ClientConfig, db *sql.DB, name string, id int64) error {
+func terminateArgo(ctx context.Context, cfg Config, db *sql.DB, name string, id int64) error {
+	client, err := kubernetesClient(cfg)
+	if err != nil {
+		log.Printf("Failed to terminate workflow %s; err=%v", name, err)
+		return err
+	}
+
 	ctx, cli, err := apiclient.NewClientFromOpts(
 		apiclient.Opts{
 			ClientConfigSupplier: func() clientcmd.ClientConfig {
@@ -660,12 +672,6 @@ func buildImage(ctx context.Context, source string, tag string, cfg Config) erro
 }
 
 func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid string, build bool, cfg Config, db *sql.DB, hub *Hub) {
-	client, err := kubernetesClient(cfg)
-	if err != nil {
-		log.Printf("Failed to access kubernetes; err=%v", err)
-		return
-	}
-
 	ctx := context.Background()
 	defer log.Printf("Completed")
 
@@ -831,11 +837,6 @@ func cleanupRun(ctx context.Context, db *sql.DB, executionId int64, executionUui
 }
 
 func cloudExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid string, build bool, cfg Config, db *sql.DB, hub *Hub) {
-	client, err := kubernetesClient(cfg)
-	if err != nil {
-		log.Printf("Failed to access kubernetes; err=%v", err)
-		return
-	}
 
 	ctx := context.Background()
 	defer log.Printf("Completed")
