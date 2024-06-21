@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { useAtom } from 'jotai'
 import ClosableModal from "./ClosableModal";
 import { choosenKubeContexts, availableKubeContexts, runningKubeContext, kubeErrors} from '@/atoms/kubecontextAtom'
+import { defaultAnvilConfigurationAtom } from "@/atoms/anvilConfigurationsAtom";
 import axios from 'axios'
 
 
@@ -16,19 +17,10 @@ export default function InitialLaunchModal() {
     const [currentRunningKubeContext]= useAtom(runningKubeContext)
     const serverAddress = import.meta.env.VITE_EXPRESS
     const [errMessage, setErrMessage] = useState([])
-    const [defaultConfig] = useAtom(defaultAnvilConfiguration)
+    const [defaultConfig] = useAtom(defaultAnvilConfigurationAtom)
     
     const closeModal = () => {
-        // axios.get(`${serverAddress}/ping-anvil`).then((res) => {
-        //     setOpen(false)
-        // }).catch((err) => {
-        //     console.log("I SHOULD BE HERE")
-        //     const errMessage = ["Can't ping anvil. Please re-try"]
-        //     setErrMessage(errMessage)
-        //     setOpen(true)
-        //     setErrOpen(true)
-        // })
-        axios.get(`${defaultConfig.host}/${defaultConfig.anvilPort}/ping`).then((res) => {
+        axios.get(`http://${defaultConfig.host}:${defaultConfig.anvilPort}/ping`).then((res) => {
             setOpen(false)
         }).catch(err => {
             const errMessage = ["Can't ping anvil. Please re-try"]
@@ -50,7 +42,7 @@ export default function InitialLaunchModal() {
         }
         const checkPing = async () => {
             try {
-                const res = await axios.get(`${defaultConfig.host}/${defaultConfig.anvilPort}/ping`)
+                const res = await axios.get(`http://${defaultConfig.host}:${defaultConfig.anvilPort}/ping`)
                 if(res.status === 200) {
                     console.log("ALREADY PINGING ANVIL")
                     // setOpen(false)

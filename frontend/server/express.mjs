@@ -13,6 +13,9 @@ import { BLOCK_SPECS_FILE_NAME } from "../src/utils/constants";
 import axios from "axios"
 
 
+
+
+
 function startExpressServer() {
   const app = express();
   const port = 3330;
@@ -21,7 +24,11 @@ function startExpressServer() {
     origin: '*'
   }))
   app.use(compression());
-
+  const anvilTimeoutPromise = new Promise((resolve, reject) => {
+    setTimeout(() => {
+      reject(new Error("Anvil Timeout Error"))
+    }, 3 * 60 * 1000)
+  })
   // http://expressjs.com/en/advanced/best-practice-security.html#at-a-minimum-disable-x-powered-by-header
   app.disable("x-powered-by");
   //app.use(express.static(path.join(__dirname, '..', '..', 'backup_frontend')));
@@ -293,14 +300,13 @@ function startExpressServer() {
           })
           console.log("CHECK RES2")
           console.log(res)
-          runAnvil.then((response) => {
-            console.log("DO I REACH HERE???")
-            console.log(res)
+
+          const runAnvilPromise = Promise.race([anvilTimeoutPromise, runAnvil])
+
+          runAnvilPromise.then((response) => {
             res.sendStatus(200)
           }).catch(err => {
-            console.log("KUBE ERROR")
-            console.log(err.message)
-            res.status(500).send({err: "Kube services not found", kubeErr: err.message})
+            res.status(500).send({err: "Error while launching anvil" , kubeErr: err.message})
           })
 
         }
@@ -459,15 +465,14 @@ function startExpressServer() {
         anvilProcess.on('close', (code) => {});
 
       })
+      const runAnvilPromise = Promise.race([anvilTimeoutPromise, runAnvil])
 
-    runAnvil.then((response) => {
-      console.log("DO I REACH HERE???")
-      res.sendStatus(200)
-    }).catch(err => {
-      console.log("ANVIL LAUNCH FAILED")
-      console.log(err.message)
-      res.status(500).send({err: "Kube services not found", kubeErr: err.message})
-    })
+      runAnvilPromise.then((response) => {
+        console.log("LAUNCH SUCCESFULL HAS TO RETURN")
+        res.sendStatus(200)
+      }).catch(err => {
+        res.status(500).send({err: "Error while launching anvil" , kubeErr: err.message})
+      })
 
 
 
@@ -583,6 +588,19 @@ function startExpressServer() {
   app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
   });
+
+  process.on('SIGINT', () => {
+    if(anvilProcess !== null) {
+      anvilProcess.kill('SIGINT')
+    }
+  })
+
+  process.on('SIGTERM', () => {
+    if(anvilProcess !== null) {
+      anvilProcess.kill("SIGINT")
+    }
+
+  })
 }
 
 export { startExpressServer };
