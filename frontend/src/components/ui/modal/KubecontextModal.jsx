@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import {trpc} from '@/utils/trpc'
 import { useImmer } from 'use-immer';
-export default function KubecontextModal({isPackaged, initialLaunch}) {
+export default function KubecontextModal({isPackaged, initialLaunch, closeFunc}) {
   const [showModal, setShowModal] = useState(false)
   const [availableKubeContextsAtom, setAvailableKubeContexts] = useAtom(availableKubeContexts)
   const [allKubecontexts, setAllKubeContexts] = useState([])
@@ -52,6 +52,7 @@ export default function KubecontextModal({isPackaged, initialLaunch}) {
         } else{
             console.log("ANVIL LAUNCH SUCCESSFULLLLLLLL")
             setIsLoading(false)
+            closeFunc()
         }
         console.log("ERROR LAUNCH ANVIL HERE")
         setIsLoading(false)

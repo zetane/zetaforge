@@ -257,19 +257,59 @@ function startExpressServer() {
         const configFile = path.join(anvilDir, 'config.json')
         const configBuffer = fs.readFileSync(configFile)
         const config = JSON.parse(configBuffer)
-        //const kubeConfig = ['config', 'set-context', body.KubeContext]
         if(config.Local.Driver === 'minikube') {
-          const kubeConfig = ['config', 'set-context', 'zetaforge']
+          console.log("DRIVER IS MINIKUBE#######")
+          const kubeConfig = ['config', 'use-context', 'zetaforge']
           const kubeExec = spawn('kubectl', kubeConfig)
           kubeExec.stderr.on('data', (data) => {
             console.log(`stderr: ${data}`)
           })
-        }
-        else {
-          const kubeConfig = ['config', 'set-context', config.KubeContext]
+
+          const anvilExec = anvilFiles.filter((file) => file.startsWith('s2-'))[0]
+          const runAnvil = new Promise((resolve, reject) => {
+            anvilProcess = spawn(path.join(anvilDir, anvilExec), {
+              cwd: anvilDir,
+              detached: true,
+              stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin, use pipes for stdout and stderr
+            });
+      
+            anvilProcess.stdout.on('data', (data) => {
+                console.log(`stdout: ${data}`);
+                
+                if(data.toString().includes('[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.')){
+                  console.log("ANVIL RUN SUCCESFULLY")
+                  resolve()
+                }
+              });
+                
+            anvilProcess.stderr.on('data', (data) => {
+                console.log(`stderr: ${data}`);
+                if(data.toString().includes("Failed to fetch kubernetes resources;" || data.toString().includes("Failed to get client config;"))) {
+                  reject(new Error(`Kubeservices not found: ${data.toString()}`))
+                }
+              });
+                
+            anvilProcess.on('close', (code) => {});
+
+          })
+          console.log("CHECK RES2")
+          console.log(res)
+
+          const runAnvilPromise = Promise.race([anvilTimeoutPromise, runAnvil])
+
+          runAnvilPromise.then((response) => {
+            res.sendStatus(200)
+          }).catch(err => {
+            res.status(500).send({err: "Error while launching anvil" , kubeErr: err.message})
+          })
+        } else {
+          console.log("CHECK KUBECONFIG")
+          console.log(config.KubeContext)
+          const kubeConfig = ['config', 'use-context', config.KubeContext]
           const kubeExec = spawn('kubectl', kubeConfig)
           kubeExec.stderr.on('data', (data) => {
             console.log(`stderr: ${data}`)
+            res.status(500).send({err: "CAN'T SET KUBECONTEXT", kubeErr: data.toString()})
           })
           const anvilExec = anvilFiles.filter((file) => file.startsWith('s2-'))[0]
           const runAnvil = new Promise((resolve, reject) => {
@@ -290,7 +330,7 @@ function startExpressServer() {
                 
             anvilProcess.stderr.on('data', (data) => {
                 console.log(`stderr: ${data}`);
-                if(data.toString().includes("Failed to fetch kubernetes resources;")) {
+                if(data.toString().includes("Failed to fetch kubernetes resources;"|| data.toString().includes("Failed to get client config;"))) {
                   reject(new Error(`Kubeservices not found: ${data.toString()}`))
                 }
               });
@@ -325,10 +365,11 @@ function startExpressServer() {
 
   app.post("/create-anvil-config", (req, res) => {
     console.log("CREATING ANVIL CONFIG")
+    console.log(process.env.VITE_ZETAFORGE_IS_DEV)
     const body = req.body
     const config = {
       IsLocal: true,
-      IsDev: true,
+      IsDev: true? process.env.VITE_ZETAFORGE_IS_DEV === 'True': false ,
       ServerPort: parseInt(body.anvilPort),
       KanikoImage: "gcr.io/kaniko-project/executor:latest",
       WorkDir: "/app",
@@ -355,7 +396,7 @@ function startExpressServer() {
       console.log("ERROR HAPPEND WHILE WRITING CONFIG.JS")
       console.log(err)
     }
-    const kubectl = ['config', 'set-context', body.KubeContext]
+    const kubectl = ['config', 'use-context', body.KubeContext]
     const kubectlCmd = spawn('kubectl', kubectl)
     kubectlCmd.on('error', (data) => {
       console.log(data)
@@ -384,10 +425,11 @@ function startExpressServer() {
     
     const anvilFiles = fs.readdirSync(anvilDir)
     if(!anvilFiles.includes('config.json')) {
-      
+      console.log("CHECK DEV")
+      console.log(process.env.VITE_ZETAFORGE_IS_DEV)
       const config = {
         IsLocal: true,
-        IsDev: true,
+        IsDev: true? process.env.VITE_ZETAFORGE_IS_DEV === 'True': false,
         ServerPort: parseInt(body.anvilPort),
         KanikoImage: "gcr.io/kaniko-project/executor:latest",
         WorkDir: "/app",
@@ -421,15 +463,18 @@ function startExpressServer() {
      const configBuffer = fs.readFileSync(configDir)
      const config = JSON.parse(configBuffer)
      if(config.Local.Driver === 'minikube') {
-      const kubectl = ['config', 'set-context', 'zetaforge']
+      console.log("DRIVER IS MINIKUBE111")
+      const kubectl = ['config', 'use-context', 'zetaforge']
       const kubectlCmd = spawn('kubectl', kubectl)
       kubectlCmd.on('error', (data) => {
         console.log(data)
         return res.sendStatus(500)
       })
      } else {
+      console.log("CHECK HERE")
+      console.log(config.KubeContext)
       const KubeContext = config.KubeContext
-      const kubectl = ['config', 'set-context', KubeContext]
+      const kubectl = ['config', 'use-context', KubeContext]
       const kubectlCmd = spawn('kubectl', kubectl)
       kubectlCmd.on('error', (data) => {
         console.log(data)
@@ -457,7 +502,7 @@ function startExpressServer() {
             
         anvilProcess.stderr.on('data', (data) => {
             console.log(`stderr: ${data}`);
-            if(data.toString().includes("Failed to fetch kubernetes resources;")){
+            if(data.toString().includes("Failed to fetch kubernetes resources;"|| data.toString().includes("Failed to get client config;"))){
               reject(new Error(`Kubeservices not found: ${data.toString()}`))
             }
           });
@@ -590,13 +635,17 @@ function startExpressServer() {
   });
 
   process.on('SIGINT', () => {
+    console.log("SIGINT ANVIL")
     if(anvilProcess !== null) {
+      console.log("KILLING ANVIL...")
       anvilProcess.kill('SIGINT')
     }
   })
 
   process.on('SIGTERM', () => {
+    console.log("SIGINT ANVIL")
     if(anvilProcess !== null) {
+      console.log("KILLING ANVIL...")
       anvilProcess.kill("SIGINT")
     }
 

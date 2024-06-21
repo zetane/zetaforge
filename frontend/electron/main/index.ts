@@ -15,8 +15,6 @@ import fs, { readFileSync } from "fs";
 
 Sentry.init({ dsn: "https://7fb18e8e487455a950298625457264f3@o1096443.ingest.us.sentry.io/4507031960223744" });
 
-console.log("CHECK HERE333333")
-console.log(process.resourcesPath)
 
 
 

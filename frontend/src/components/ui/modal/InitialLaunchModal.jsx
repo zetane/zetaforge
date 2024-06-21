@@ -1,5 +1,5 @@
 import { isPackaged } from "@/atoms/kubecontextAtom";
-import { Modal } from "@carbon/react";
+import { Modal, Loading } from "@carbon/react";
 import KubecontextModal from "./KubecontextModal";
 import { useState, useEffect } from "react";
 import { useAtom } from 'jotai'
@@ -11,14 +11,14 @@ import axios from 'axios'
 
 export default function InitialLaunchModal() {
     const [appIsPackaged, setIsPackaged] = useAtom(isPackaged)
-    const [open, setOpen] = useState(true)
+    const [open, setOpen] = useState(false)
     const [errOpen, setErrOpen] = useState(false)
     const [availableKubeContextsAtom, setAvailableKubeContexts] = useAtom(availableKubeContexts)
     const [currentRunningKubeContext]= useAtom(runningKubeContext)
     const serverAddress = import.meta.env.VITE_EXPRESS
     const [errMessage, setErrMessage] = useState([])
     const [defaultConfig] = useAtom(defaultAnvilConfigurationAtom)
-    
+    const [loading, setIsLoading] = useState(true)
     const closeModal = () => {
         axios.get(`http://${defaultConfig.host}:${defaultConfig.anvilPort}/ping`).then((res) => {
             setOpen(false)
@@ -45,7 +45,7 @@ export default function InitialLaunchModal() {
                 const res = await axios.get(`http://${defaultConfig.host}:${defaultConfig.anvilPort}/ping`)
                 if(res.status === 200) {
                     console.log("ALREADY PINGING ANVIL")
-                    // setOpen(false)
+                    setIsLoading(false)
                     return true
                 } else {
                     console.log("PING FAILEDDD1111")
@@ -65,14 +65,17 @@ export default function InitialLaunchModal() {
                 axios.post(`${serverAddress}/initial-anvil-launch`).then((anvilResponse) => {
                     if(anvilResponse.status === 200){
                         setOpen(false)
+                        setIsLoading(false)
                     } else {
                         console.log("CHECK IF KUBEERROR HAPPENS HERE??")
                         setOpen(true)
+                        setIsLoading(false)
                     }
                 }).catch((err) => {
                     console.log("CHECK IF KUBEERROR HAPPENS HERE222")
                     console.log(err)
                     setOpen(true)
+                    setIsLoading(false)
                 })
             }
             
@@ -88,7 +91,8 @@ export default function InitialLaunchModal() {
     return (
     <>
     <Modal modalHeading="Please select a kubecontext" passiveModal open={open} onRequestClose={closeModal}>
-        <KubecontextModal isPackaged={true} initialLaunch={true} />
+        <KubecontextModal isPackaged={true} initialLaunch={true} closeFunc={() => setOpen(false)}/>
+        <Loading active={loading} />
     </Modal>
 
 <ClosableModal
