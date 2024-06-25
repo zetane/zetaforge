@@ -48,6 +48,16 @@ if (targetIndex !== -1) {
   process.env.VITE_ZETAFORGE_IS_DEV = 'False'
 }
 
+const isPip = '--is_pip'
+
+const targetPipIndex = process.argv.indexOf(isPip)
+
+if(targetPipIndex !== -1) {
+  process.env.VITE_IS_PIP = 'True'
+} else {
+  process.env.VITE_IS_PIP = 'False'
+}
+
 // Disable GPU Acceleration for Windows 7
 if (release().startsWith('6.1')) app.disableHardwareAcceleration()
 

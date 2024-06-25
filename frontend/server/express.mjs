@@ -288,7 +288,7 @@ function startExpressServer() {
                 
             anvilProcess.stderr.on('data', (data) => {
                 console.log(`stderr: ${data}`);
-                if(data.toString().includes("Failed to fetch kubernetes resources;" || data.toString().includes("Failed to get client config;"))) {
+                if( data.toString().includes("Failed to fetch kubernetes resources;") || data.toString().includes("Failed to get client config;")) {
                   reject(new Error(`Kubeservices not found: ${data.toString()}`))
                 }
               });
@@ -334,7 +334,7 @@ function startExpressServer() {
                 
             anvilProcess.stderr.on('data', (data) => {
                 console.log(`stderr: ${data}`);
-                if(data.toString().includes("Failed to fetch kubernetes resources;"|| data.toString().includes("Failed to get client config;"))) {
+                if(data.toString().includes("Failed to fetch kubernetes resources;")|| data.toString().includes("Failed to get client config;")) {
                   reject(new Error(`Kubeservices not found: ${data.toString()}`))
                 }
               });
@@ -409,7 +409,8 @@ function startExpressServer() {
   })
   
   app.get("/isPackaged", (req, res) => {
-    return res.status(200).json(electronApp.isPackaged)
+    const isPip = process.env.VITE_IS_PIP === 'True'? true : false
+    return res.status(200).json(electronApp.isPackaged && !isPip)
   })
   app.post("/launch-anvil", async (req,res) => {
     if(!electronApp.isPackaged) {
