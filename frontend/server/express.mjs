@@ -17,8 +17,11 @@ let anvilProcess = null
 
 function gracefullyStopAnvil() {
   if(anvilProcess !== null) {
-    console.log("KILLING ANVILLLL")
     anvilProcess.kill("SIGINT")
+    const sleep = new Promise(((resolve) => setTimeout(resolve, 5000)))
+    sleep().then(res => {
+
+    })
   }
 }
 
@@ -235,18 +238,7 @@ function startExpressServer() {
   });
   
 
-  app.post("/execute-anvil", (req, res) => {
-    const body = req.body
-    const execute = body.execute
-    const url = body.url
-
-    axios.post(url, execute).then((response) => {
-      res.sendStatus(response.status)
-    }).catch((err) => {
-      console.error(err)
-      res.sendStatus(500)
-    })
-  })
+  
 
 
   app.post("/initial-anvil-launch", (req, res) => {
@@ -265,12 +257,16 @@ function startExpressServer() {
         const configFile = path.join(anvilDir, 'config.json')
         const configBuffer = fs.readFileSync(configFile)
         const config = JSON.parse(configBuffer)
+        if(config.IsLocal !== true){
+          res.status(500).send({err: "Malformed config.json", kubeErr: "Local must be true"})
+        }
         if(config.Local.Driver === 'minikube') {
           console.log("DRIVER IS MINIKUBE#######")
           const kubeConfig = ['config', 'use-context', 'zetaforge']
           const kubeExec = spawn('kubectl', kubeConfig)
           kubeExec.stderr.on('data', (data) => {
             console.log(`stderr: ${data}`)
+            res.status(500).send({err: "CAN'T SET KUBECONTEXT", kubeErr: data.toString()})
           })
 
           const anvilExec = anvilFiles.filter((file) => file.startsWith('s2-'))[0]
@@ -403,7 +399,7 @@ function startExpressServer() {
     const kubectlCmd = spawn('kubectl', kubectl)
     kubectlCmd.on('error', (data) => {
       console.log(data)
-      return res.sendStatus(500)
+      return res.status(500).send({err: "CAN'T SET KUBECONTEXT", kubeErr: data.toString()})
     })
 
     res.sendStatus(200)
@@ -457,7 +453,29 @@ function startExpressServer() {
         console.log("FILE WRITTEN")
       } catch(err) {
         console.log("ERROR HAPPEND WHILE WRITING CONFIG.JS")
+        res.status(500).status({err: "Config error happened", kubeErr: "Error creating config error"})
+
         console.log(err)
+      }
+
+    } else {
+      console.log("EXCEPTION HAPPEN HERE")
+      //this else is added for minikube case.
+      const configDir = path.join(anvilDir, 'config.json')
+      const configFile = fs.readFileSync(configDir)
+      const config = JSON.parse(configFile)
+      config.KubeContext = body.KubeContext
+      if(config.Local.Driver !== 'minikube') {
+        config.Local.Driver = config.KubeContext
+      } else {
+        config.Local.Driver = 'minikube'
+      }
+
+      const configStr = JSON.stringify(config)
+      try {
+        fs.writeFileSync(configDir, configStr)
+      } catch(err) {
+        res.status(500).status({err: "Config error happened", kubeErr: "Error creating config error"})
       }
 
     }
@@ -471,7 +489,7 @@ function startExpressServer() {
       const kubectlCmd = spawn('kubectl', kubectl)
       kubectlCmd.on('error', (data) => {
         console.log(data)
-        return res.sendStatus(500)
+        return res.status(500).send({err: "CAN'T SET KUBECONTEXT", kubeErr: data.toString()})
       })
      } else {
       console.log("CHECK HERE")
@@ -481,7 +499,7 @@ function startExpressServer() {
       const kubectlCmd = spawn('kubectl', kubectl)
       kubectlCmd.on('error', (data) => {
         console.log(data)
-        res.sendStatus(500)
+        res.status(500).send({err: "CAN'T SET KUBECONTEXT", kubeErr: data.toString()})
       })
      }
      const anvilDirContent = fs.readdirSync(anvilDir)

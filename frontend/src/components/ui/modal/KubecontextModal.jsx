@@ -45,6 +45,8 @@ export default function KubecontextModal({isPackaged, initialLaunch, closeFunc})
     }
     
     try {
+        console.log("CHANGE ANVIL CONFIG")
+        console.log(reqBody)
         const executeAnvil = await axios.post(`${serverAddress}/launch-anvil`, reqBody)
         if(executeAnvil.status !== 200) {
             console.log("ERROR CREAATING ANVIL EXEC")
