@@ -12,14 +12,22 @@ import path from "path";
 import { BLOCK_SPECS_FILE_NAME } from "../src/utils/constants";
 import axios from "axios"
 
+let anvilProcess = null
 
+
+function gracefullyStopAnvil() {
+  if(anvilProcess !== null) {
+    console.log("KILLING ANVILLLL")
+    anvilProcess.kill("SIGINT")
+  }
+}
 
 
 
 function startExpressServer() {
   const app = express();
   const port = 3330;
-  let anvilProcess = null
+  
   app.use(cors({
     origin: '*'
   }))
@@ -356,16 +364,11 @@ function startExpressServer() {
     } catch(err) {
       res.sendStatus(500)
     }
-    
-    
-
-    
   })
 
 
   app.post("/create-anvil-config", (req, res) => {
     console.log("CREATING ANVIL CONFIG")
-    console.log(process.env.VITE_ZETAFORGE_IS_DEV)
     const body = req.body
     const config = {
       IsLocal: true,
@@ -652,4 +655,4 @@ function startExpressServer() {
   })
 }
 
-export { startExpressServer };
+export { startExpressServer, gracefullyStopAnvil };

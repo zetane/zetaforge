@@ -7,7 +7,7 @@ import { release } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import "../../polyfill/crypto";
-import { startExpressServer } from "../../server/express.mjs";
+import { gracefullyStopAnvil, startExpressServer } from "../../server/express.mjs";
 import { update } from './update';
 import config from '../../config'
 import path from "path";
@@ -166,8 +166,14 @@ async function createWindow() {
 app.whenReady().then(createWindow)
 
 app.on('window-all-closed', () => {
+  console.log("WINDOW ALL CLOSED!!!!")
   win = null
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('will-quit', () => {
+  console.log("QUITTING ANVIL...")
+  gracefullyStopAnvil()
 })
 
 app.on('second-instance', () => {
