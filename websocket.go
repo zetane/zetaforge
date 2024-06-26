@@ -19,50 +19,50 @@ type Client struct {
 	Hub    *Hub
 }
 
-func (client *Client) Receive() {
-	client.Conn.SetReadLimit(1024)
-	client.Conn.SetReadDeadline(time.Now().Add(pongWait))
-	client.Conn.SetPongHandler(func(string) error {
-		client.Conn.SetReadDeadline(time.Now().Add(pongWait))
+func (c *Client) Receive() {
+	c.Conn.SetReadLimit(1024)
+	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.Conn.SetPongHandler(func(string) error {
+		c.Conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
 	defer func() {
-		client.Hub.Unregister <- client
-		client.Conn.Close()
+		c.Hub.Unregister <- c
+		c.Conn.Close()
 	}()
 
 	for {
 		var msg Message
-		if err := client.Conn.ReadJSON(&msg); err != nil {
+		if err := c.Conn.ReadJSON(&msg); err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				log.Printf("Read error: %v", err)
 			}
 			return
 		}
-		msg.Room = client.Room
-		client.Hub.Broadcast <- msg
+		msg.Room = c.Room
+		c.Hub.Broadcast <- msg
 	}
 }
 
-func (client *Client) Send() {
+func (c *Client) Send() {
 	ticker := time.NewTicker(pingPeriod)
 
 	defer func() {
 		ticker.Stop()
-		client.Conn.Close()
+		c.Conn.Close()
 	}()
 
 	for {
 		select {
-		case msg, ok := <-client.ToSend:
-			client.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+		case msg, ok := <-c.ToSend:
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				client.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			} else {
 				msg.Room = ""
-				if err := client.Conn.WriteJSON(msg); err != nil {
+				if err := c.Conn.WriteJSON(msg); err != nil {
 					if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						log.Printf("Write error: %v", err)
 					}
@@ -70,8 +70,8 @@ func (client *Client) Send() {
 				}
 			}
 		case <-ticker.C:
-			client.Conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := client.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 					log.Printf("Ping error: %v", err)
 				}
@@ -102,22 +102,22 @@ func newHub() *Hub {
 	}
 }
 
-func (hub *Hub) Run() {
+func (h *Hub) Run() {
 	for {
 		select {
-		case client := <-hub.Register:
-			hub.Clients[client.Room][client] = true
-		case client := <-hub.Unregister:
-			if _, ok := hub.Clients[client.Room]; ok {
-				delete(hub.Clients[client.Room], client)
+		case client := <-h.Register:
+			h.Clients[client.Room][client] = true
+		case client := <-h.Unregister:
+			if _, ok := h.Clients[client.Room]; ok {
+				delete(h.Clients[client.Room], client)
 				close(client.ToSend)
 			}
-		case message := <-hub.Broadcast:
-			for client := range hub.Clients[message.Room] {
+		case message := <-h.Broadcast:
+			for client := range h.Clients[message.Room] {
 				select {
 				case client.ToSend <- message:
 				default:
-					delete(hub.Clients[client.Room], client)
+					delete(h.Clients[client.Room], client)
 					close(client.ToSend)
 				}
 			}
@@ -125,37 +125,37 @@ func (hub *Hub) Run() {
 	}
 }
 
-func (hub *Hub) GetRooms() []string {
-	roomLen := len(hub.Clients)
+func (h *Hub) GetRooms() []string {
+	roomLen := len(h.Clients)
 	var rooms = make([]string, 0, roomLen)
-	for room := range hub.Clients {
+	for room := range h.Clients {
 		rooms = append(rooms, room)
 	}
 
 	return rooms
 }
 
-func (hub *Hub) OpenRoom(room string) error {
-	if _, ok := hub.Clients[room]; ok {
-		return errors.New("Pipeline already exists")
+func (h *Hub) OpenRoom(room string) error {
+	if _, ok := h.Clients[room]; ok {
+		return errors.New("pipeline already exists")
 	}
 
-	hub.Clients[room] = make(map[*Client]bool)
+	h.Clients[room] = make(map[*Client]bool)
 
 	return nil
 }
 
-func (hub *Hub) CloseRoom(room string) {
-	if _, ok := hub.Clients[room]; ok {
-		for client := range hub.Clients[room] {
+func (h *Hub) CloseRoom(room string) {
+	if _, ok := h.Clients[room]; ok {
+		for client := range h.Clients[room] {
 			close(client.ToSend)
 		}
-		delete(hub.Clients, room)
+		delete(h.Clients, room)
 	}
 }
 
-func serveSocket(conn *websocket.Conn, room string, hub *Hub) HTTPError {
-	if _, ok := hub.Clients[room]; !ok { // if does not exist
+func serveSocket(conn *websocket.Conn, room string, h *Hub) HTTPError {
+	if _, ok := h.Clients[room]; !ok { // if does not exist
 		return BadRequest{"room " + room + " does not exist"}
 	}
 
@@ -163,10 +163,10 @@ func serveSocket(conn *websocket.Conn, room string, hub *Hub) HTTPError {
 		Room:   room,
 		Conn:   conn,
 		ToSend: make(chan Message, 1024),
-		Hub:    hub,
+		Hub:    h,
 	}
 
-	hub.Register <- client
+	h.Register <- client
 	go client.Receive()
 	go client.Send()
 	return nil

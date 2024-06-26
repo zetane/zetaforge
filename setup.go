@@ -286,19 +286,19 @@ func migrate(ctx context.Context, resources map[string]string, config Config, cl
 func setup(ctx context.Context, config Config, client clientcmd.ClientConfig, db *sql.DB) {
 	clientConfig, err := client.ClientConfig()
 	if err != nil {
-		log.Fatalf("Failed to get client config; err=%v", err)
+		log.Fatalf("failed to get client config; err=%v", err)
 	}
 
 	log.Println("Starting Setup...")
 	resources, err := kubectlResources(clientConfig)
 	if err != nil {
-		log.Fatalf("Failed to fetch kubernetes resources; err=%v", err)
+		log.Fatalf("failed to fetch kubernetes resources; err=%v", err)
 	}
 	if err := kubectlApply(ctx, "setup/install.yaml", resources, clientConfig); err != nil {
-		log.Fatalf("Failed to install argo; err=%v", err)
+		log.Fatalf("failed to install argo; err=%v", err)
 	}
 	if err := migrate(ctx, resources, config, clientConfig, db); err != nil {
-		log.Fatalf("Failed to migrate bucket; err=%v", err)
+		log.Fatalf("failed to migrate bucket; err=%v", err)
 	}
 
 	signals := make(chan os.Signal, 1)
@@ -320,7 +320,7 @@ func setup(ctx context.Context, config Config, client clientcmd.ClientConfig, db
 			<-signals
 			log.Println("Starting Shutdown...")
 			if err := kubectlDelete(ctx, "setup/install.yaml", resources, clientConfig); err != nil {
-				log.Printf("Failed to delete argo; err=%v", err)
+				log.Printf("failed to delete argo; err=%v", err)
 			}
 			if stopBucketCh != nil {
 				close(stopBucketCh)
@@ -334,7 +334,7 @@ func setup(ctx context.Context, config Config, client clientcmd.ClientConfig, db
 			<-signals
 			log.Println("Starting Shutdown...")
 			if err := kubectlDelete(ctx, "setup/install.yaml", resources, clientConfig); err != nil {
-				log.Printf("Failed to delete argo; err=%v", err)
+				log.Printf("failed to delete argo; err=%v", err)
 			}
 			log.Println("Shutdown Successful")
 			signal.Stop(signals)
@@ -351,12 +351,12 @@ func setup(ctx context.Context, config Config, client clientcmd.ClientConfig, db
 func uninstall(ctx context.Context, client clientcmd.ClientConfig, db *sql.DB) {
 	clientConfig, err := client.ClientConfig()
 	if err != nil {
-		log.Fatalf("Failed to get client config; err=%v", err)
+		log.Fatalf("failed to get client config; err=%v", err)
 	}
 
 	resources, err := kubectlResources(clientConfig)
 	if err != nil {
-		log.Fatalf("Failed to fetch kubernetes resources; err=%v", err)
+		log.Fatalf("failed to fetch kubernetes resources; err=%v", err)
 	}
 
 	setupVersion, err := getSetupVersion(ctx, db)
@@ -368,6 +368,6 @@ func uninstall(ctx context.Context, client clientcmd.ClientConfig, db *sql.DB) {
 	}
 
 	if err := kubectlDelete(ctx, "setup/build-"+version+".yaml", resources, clientConfig); err != nil {
-		log.Fatalf("Failed to delete bucket; err=%v", err)
+		log.Fatalf("failed to delete bucket; err=%v", err)
 	}
 }

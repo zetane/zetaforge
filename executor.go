@@ -186,7 +186,7 @@ func downloadFiles(ctx context.Context, sink string, prefix string, cfg Config) 
 func deleteFiles(ctx context.Context, prefix string, extraFiles []string, cfg Config) {
 	client, err := s3Client(ctx, cfg)
 	if err != nil {
-		log.Printf("Failed to delete files; err=%v", err)
+		log.Printf("failed to delete files; err=%v", err)
 		return
 	}
 
@@ -202,7 +202,7 @@ func deleteFiles(ctx context.Context, prefix string, extraFiles []string, cfg Co
 		Prefix: aws.String(prefix),
 	})
 	if err != nil {
-		log.Printf("Failed to delete files; err=%v", err)
+		log.Printf("failed to delete files; err=%v", err)
 	}
 
 	for _, content := range res.Contents {
@@ -219,7 +219,7 @@ func deleteFiles(ctx context.Context, prefix string, extraFiles []string, cfg Co
 
 	_, err = client.DeleteObjects(ctx, params)
 	if err != nil {
-		log.Printf("Failed to delete files; err=%v", err)
+		log.Printf("failed to delete files; err=%v", err)
 	}
 }
 
@@ -266,14 +266,14 @@ func streaming(ctx context.Context, name string, client clientcmd.ClientConfig) 
 	)
 
 	if err != nil {
-		log.Printf("Log stream error; err=%v", err)
+		log.Printf("log stream error; err=%v", err)
 		return
 	}
 
 	namespace, _, err := client.Namespace()
 
 	if err != nil {
-		log.Printf("Log stream error; err=%v", err)
+		log.Printf("log stream error; err=%v", err)
 		return
 	}
 
@@ -289,7 +289,7 @@ func streaming(ctx context.Context, name string, client clientcmd.ClientConfig) 
 		})
 
 		if err != nil {
-			log.Printf("Log stream error; err=%v", err)
+			log.Printf("log stream error; err=%v", err)
 			return
 		}
 
@@ -299,7 +299,7 @@ func streaming(ctx context.Context, name string, client clientcmd.ClientConfig) 
 			if err == io.EOF {
 				break
 			} else if err != nil {
-				log.Printf("Log stream error; err=%v", err)
+				log.Printf("log stream error; err=%v", err)
 				break
 			}
 			// Remove the square brackets from the string
@@ -313,7 +313,7 @@ func streaming(ctx context.Context, name string, client clientcmd.ClientConfig) 
 			if len(parts) >= 4 {
 				blockId = strings.Join(parts[2:len(parts)-1], "-")
 			} else {
-				fmt.Println("Invalid input string format")
+				fmt.Println("invalid input string format")
 			}
 			jsonObj := map[string]interface{}{
 				"blockId": blockId,
@@ -321,7 +321,7 @@ func streaming(ctx context.Context, name string, client clientcmd.ClientConfig) 
 			}
 			jsonData, err := json.Marshal(jsonObj)
 			if err != nil {
-				fmt.Printf("Failed to cast log to JSON: %v", err)
+				fmt.Printf("failed to cast log to JSON: %v", err)
 			}
 
 			// This writes stream output to log, mandatory
@@ -368,7 +368,7 @@ func runArgo(ctx context.Context, workflow *wfv1.Workflow, execution int64, clie
 	}
 
 	if err := addExecutionWorkflow(ctx, db, execution, workflow.Name); err != nil {
-		log.Printf("Failed to write workflow id to database; err=%v", err)
+		log.Printf("failed to write workflow id to database; err=%v", err)
 		return workflow, err
 	}
 
@@ -428,14 +428,14 @@ func deleteArgo(ctx context.Context, name string, client clientcmd.ClientConfig)
 	)
 
 	if err != nil {
-		log.Printf("Failed to delete workflow %s; err=%v", name, err)
+		log.Printf("failed to delete workflow %s; err=%v", name, err)
 		return
 	}
 
 	namespace, _, err := client.Namespace()
 
 	if err != nil {
-		log.Printf("Failed to delete workflow %s; err=%v", name, err)
+		log.Printf("failed to delete workflow %s; err=%v", name, err)
 		return
 	}
 
@@ -447,7 +447,7 @@ func deleteArgo(ctx context.Context, name string, client clientcmd.ClientConfig)
 	})
 
 	if err != nil {
-		log.Printf("Failed to delete workflow %s; err=%v", name, err)
+		log.Printf("failed to delete workflow %s; err=%v", name, err)
 	}
 }
 
@@ -462,14 +462,14 @@ func stopArgo(ctx context.Context, name string, client clientcmd.ClientConfig) e
 	)
 
 	if err != nil {
-		log.Printf("Failed to build an api client; err=%v", err)
+		log.Printf("failed to build an api client; err=%v", err)
 		return err
 	}
 
 	namespace, _, err := client.Namespace()
 
 	if err != nil {
-		log.Printf("Failed to stop workflow %s; err=%v", name, err)
+		log.Printf("failed to stop workflow %s; err=%v", name, err)
 		return err
 	}
 
@@ -480,7 +480,7 @@ func stopArgo(ctx context.Context, name string, client clientcmd.ClientConfig) e
 	})
 
 	if err != nil {
-		log.Printf("Failed to stop workflow %s; err=%v", name, err)
+		log.Printf("failed to stop workflow %s; err=%v", name, err)
 		return err
 	}
 
@@ -497,13 +497,13 @@ func terminateArgo(ctx context.Context, client clientcmd.ClientConfig, db *sql.D
 		},
 	)
 	if err != nil {
-		log.Printf("Failed to build an api client; err=%v", err)
+		log.Printf("failed to build an api client; err=%v", err)
 		return err
 	}
 
 	namespace, _, err := client.Namespace()
 	if err != nil {
-		log.Printf("Failed to stop workflow %s; err=%v", name, err)
+		log.Printf("failed to stop workflow %s; err=%v", name, err)
 		return err
 	}
 
@@ -513,11 +513,11 @@ func terminateArgo(ctx context.Context, client clientcmd.ClientConfig, db *sql.D
 		Namespace: namespace,
 	})
 	if err != nil {
-		log.Printf("Failed to get workflow %s; err=%v", name, err)
+		log.Printf("failed to get workflow %s; err=%v", name, err)
 		updateErr := updateExecutionStatus(ctx, db, id, "Failed")
 
 		if updateErr != nil {
-			log.Printf("Failed to update execution status for workflow %s; err=%v", name, err)
+			log.Printf("failed to update execution status for workflow %s; err=%v", name, err)
 		}
 
 		return err
@@ -529,14 +529,14 @@ func terminateArgo(ctx context.Context, client clientcmd.ClientConfig, db *sql.D
 			Namespace: namespace,
 		})
 		if err != nil {
-			log.Printf("Failed to stop workflow %s; err=%v", name, err)
+			log.Printf("failed to stop workflow %s; err=%v", name, err)
 			return err
 		}
 	}
 
 	err = updateExecutionStatus(ctx, db, id, "Failed")
 	if err != nil {
-		log.Printf("Failed to update execution status for workflow %s; err=%v", name, err)
+		log.Printf("failed to update execution status for workflow %s; err=%v", name, err)
 		return err
 	}
 
@@ -665,13 +665,13 @@ func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 	defer completeExecution(ctx, db, executionId)
 
 	if err := hub.OpenRoom(executionUuid); err != nil {
-		log.Printf("Failed to open log room; err=%v", err)
+		log.Printf("failed to open log room; err=%v", err)
 		return
 	}
 	defer hub.CloseRoom(executionUuid)
 
 	if err := upload(ctx, cfg.EntrypointFile, cfg.EntrypointFile, cfg); err != nil { // should never fail
-		log.Printf("Failed to upload entrypoint file; err=%v", err)
+		log.Printf("failed to upload entrypoint file; err=%v", err)
 		return
 	}
 
@@ -680,7 +680,7 @@ func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 
 	file, err := os.OpenFile(tempLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Printf("Error creating pipeline log: %v", err)
+		log.Printf("error creating pipeline log: %v", err)
 	}
 
 	pipelineLogger := createLogger(executionUuid, file, func(message string, executionUuid string) {
@@ -737,17 +737,17 @@ func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 
 	jsonData, err := json.MarshalIndent(pipeline, "", "  ")
 	if err != nil {
-		log.Printf("Invalid pipeline.json; err=%v", err)
+		log.Printf("invalid pipeline.json; err=%v", err)
 		return
 	}
 	if err := uploadData(ctx, string(jsonData), s3Key+"/"+"pipeline.json", cfg); err != nil {
-		log.Printf("Failed to write pipeline.json; err=%v", err)
+		log.Printf("failed to write pipeline.json; err=%v", err)
 		return
 	}
 
 	workflow, blocks, err := translate(ctx, pipeline, "org", s3Key, build, cfg)
 	if err != nil {
-		log.Printf("Failed to translate the pipeline; err=%v", err)
+		log.Printf("failed to translate the pipeline; err=%v", err)
 		return
 	}
 
@@ -755,17 +755,17 @@ func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 
 	jsonWorkflow, err := json.MarshalIndent(&workflow, "", "  ")
 	if err != nil {
-		log.Printf("Invalid translated pipeline.json; err=%v", err)
+		log.Printf("invalid translated pipeline.json; err=%v", err)
 		return
 	}
 
 	if err := uploadData(ctx, string(jsonWorkflow), s3Key+"/"+"argo.json", cfg); err != nil {
-		log.Printf("Failed to write translated pipeline.json; err=%v", err)
+		log.Printf("failed to write translated pipeline.json; err=%v", err)
 		return
 	}
 
 	if err := updateExecutionJson(ctx, db, executionId, workflow); err != nil {
-		log.Printf("Failed to write workflow to database; err=%v", err)
+		log.Printf("failed to write workflow to database; err=%v", err)
 		return
 	}
 
@@ -785,7 +785,7 @@ func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 	}
 
 	if err := eg.Wait(); err != nil {
-		log.Printf("Error during pipeline execution; err=%v", err)
+		log.Printf("error during pipeline execution; err=%v", err)
 		return
 	}
 
@@ -795,13 +795,13 @@ func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 		defer deleteArgo(ctx, workflow.Name, client)
 	}
 	if err != nil {
-		log.Printf("Error during pipeline execution; err=%v", err)
+		log.Printf("error during pipeline execution; err=%v", err)
 		return
 	}
 	// needs to be called here in addition to in defer
 	// in defer, it seems the nodes go out of scope
 	if err := results(ctx, db, executionId, *pipeline, *workflow); err != nil {
-		log.Printf("Failed to save results; err=%v", err)
+		log.Printf("failed to save results; err=%v", err)
 	}
 }
 
@@ -810,16 +810,16 @@ func cleanupRun(ctx context.Context, db *sql.DB, executionId int64, executionUui
 	s3Key := pipeline.Id + "/" + executionUuid
 
 	if err := upload(ctx, tempLog, s3Key+"/"+executionUuid+".log", cfg); err != nil {
-		log.Printf("Failed to upload log: err=%v", err)
+		log.Printf("failed to upload log: err=%v", err)
 	}
 
 	if err := results(ctx, db, executionId, pipeline, workflow); err != nil {
-		log.Printf("Failed to save results; err=%v", err)
+		log.Printf("failed to save results; err=%v", err)
 	}
 
 	sink := filepath.Join(pipeline.Sink, "history", executionUuid)
 	if err := downloadFiles(ctx, sink, s3Key, cfg); err != nil {
-		log.Printf("Failed to download files; err=%v", err)
+		log.Printf("failed to download files; err=%v", err)
 	}
 }
 
@@ -830,7 +830,7 @@ func cloudExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 	defer completeExecution(ctx, db, executionId)
 
 	if err := hub.OpenRoom(pipeline.Id); err != nil {
-		log.Printf("Failed to open log room; err=%v", err)
+		log.Printf("failed to open log room; err=%v", err)
 		return
 	}
 	defer hub.CloseRoom(pipeline.Id)
@@ -839,12 +839,12 @@ func cloudExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 
 	workflow, _, err := translate(ctx, pipeline, "org", s3key, build, cfg)
 	if err != nil {
-		log.Printf("Failed to translate the pipeline; err=%v", err)
+		log.Printf("failed to translate the pipeline; err=%v", err)
 		return
 	}
 
 	if err := updateExecutionJson(ctx, db, executionId, workflow); err != nil {
-		log.Printf("Failed to write workflow to database; err=%v", err)
+		log.Printf("failed to write workflow to database; err=%v", err)
 		return
 	}
 
@@ -853,7 +853,7 @@ func cloudExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 		defer deleteArgo(ctx, workflow.Name, client)
 	}
 	if err != nil {
-		log.Printf("Error during pipeline execution; err=%v", err)
+		log.Printf("error during pipeline execution; err=%v", err)
 		return
 	}
 }
@@ -868,7 +868,7 @@ func getBuildContextStatus(pipeline *zjson.Pipeline, cfg Config) []zjson.BuildCo
 			s3Key := getKanikoBuildContextS3Key(&block, "org")
 
 			if err != nil {
-				log.Printf("Failed to get build context status; err=%v", err)
+				log.Printf("failed to get build context status; err=%v", err)
 				return buildContextStatus
 			}
 
