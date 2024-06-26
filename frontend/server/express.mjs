@@ -278,7 +278,7 @@ function startExpressServer() {
             });
       
             anvilProcess.stdout.on('data', (data) => {
-                console.log(`stdout: ${data}`);
+                console.log(`[server] stdout: ${data}`);
                 
                 if(data.toString().includes('[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.')){
                   console.log("ANVIL RUN SUCCESFULLY")
@@ -287,7 +287,7 @@ function startExpressServer() {
               });
                 
             anvilProcess.stderr.on('data', (data) => {
-                console.log(`stderr: ${data}`);
+                console.log(`[server] stderr: ${data}`);
                 if( data.toString().includes("Failed to fetch kubernetes resources;") || data.toString().includes("Failed to get client config;")) {
                   reject(new Error(`Kubeservices not found: ${data.toString()}`))
                 }
@@ -324,7 +324,7 @@ function startExpressServer() {
             });
       
             anvilProcess.stdout.on('data', (data) => {
-                console.log(`stdout: ${data}`);
+                console.log(`[server] stdout: ${data}`);
                 
                 if(data.toString().includes('[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.')){
                   console.log("ANVIL RUN SUCCESFULLY")
@@ -333,7 +333,7 @@ function startExpressServer() {
               });
                 
             anvilProcess.stderr.on('data', (data) => {
-                console.log(`stderr: ${data}`);
+                console.log(`[server] stderr: ${data}`);
                 if(data.toString().includes("Failed to fetch kubernetes resources;")|| data.toString().includes("Failed to get client config;")) {
                   reject(new Error(`Kubeservices not found: ${data.toString()}`))
                 }
@@ -514,7 +514,7 @@ function startExpressServer() {
         });
   
         anvilProcess.stdout.on('data', (data) => {
-            console.log(`stdout: ${data}`);
+            console.log(`[server] stdout: ${data}`);
             
             if(data.toString().includes('[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.')){
               console.log("ANVIL RUN SUCCESFULLY")
@@ -523,7 +523,7 @@ function startExpressServer() {
           });
             
         anvilProcess.stderr.on('data', (data) => {
-            console.log(`stderr: ${data}`);
+            console.log(`[server] stderr: ${data}`);
             if(data.toString().includes("Failed to fetch kubernetes resources;"|| data.toString().includes("Failed to get client config;"))){
               reject(new Error(`Kubeservices not found: ${data.toString()}`))
             }
