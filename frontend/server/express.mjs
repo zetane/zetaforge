@@ -20,7 +20,7 @@ function gracefullyStopAnvil() {
     anvilProcess.kill("SIGINT")
     const sleep = new Promise(((resolve) => setTimeout(resolve, 5000)))
     sleep().then(res => {
-
+      console.log("schleepy shleep")
     })
   }
 }
@@ -535,7 +535,6 @@ function startExpressServer() {
       const runAnvilPromise = Promise.race([anvilTimeoutPromise, runAnvil])
 
       runAnvilPromise.then((response) => {
-        console.log("LAUNCH SUCCESFULL HAS TO RETURN")
         res.sendStatus(200)
       }).catch(err => {
         res.status(500).send({err: "Error while launching anvil" , kubeErr: err.message})
