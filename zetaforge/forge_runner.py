@@ -241,11 +241,11 @@ def run_forge(server_version=None, client_version=None, server_path=None, client
         print(f"Launching client {client_path}..")
         client_executable = os.path.basename(client_path)
         if platform.system() == 'Darwin':
-            client_executable = [f"./{client_executable}"]
+            client_executable = [f"./{client_executable}", "--is_pip"]
         elif platform.system() == 'Windows':
-            client_executable = [client_path, '--no-sandbox']
+            client_executable = [client_path, '--no-sandbox', "--is_pip"]
         else:
-            client_executable = [f"./{client_executable}", "--no-sandbox"]
+            client_executable = [f"./{client_executable}", "--no-sandbox", "--is_pip"]
 
         #handles the situation where user launches pip launcher with is_dev, for the client executable.
         if is_dev:

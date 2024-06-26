@@ -5,6 +5,7 @@ import { mixpanelAtom } from "@/atoms/mixpanelAtom";
 import generateSchema from '@/utils/schemaValidation';
 import { trpc } from "@/utils/trpc";
 import { Button } from "@carbon/react";
+import axios from "axios";
 import { useAtom } from "jotai";
 import { useImmerAtom } from "jotai-immer";
 import { useState } from "react";

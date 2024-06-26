@@ -29,6 +29,7 @@ export default function ClosableModal(props) {
       {...modalProps}
     >
       {children}
+      
     </Modal>
   );
 }

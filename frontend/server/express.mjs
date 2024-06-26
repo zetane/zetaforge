@@ -1,5 +1,5 @@
 import bodyParser from "body-parser";
-import { spawn } from "child_process";
+import { spawn, exec } from "child_process";
 import compression from "compression";
 import cors from "cors";
 import 'dotenv/config';
@@ -10,14 +10,36 @@ import multer from "multer";
 import { Configuration, OpenAIApi } from "openai";
 import path from "path";
 import { BLOCK_SPECS_FILE_NAME } from "../src/utils/constants";
+import axios from "axios"
+
+let anvilProcess = null
+
+
+function gracefullyStopAnvil() {
+  if(anvilProcess !== null) {
+    anvilProcess.kill("SIGINT")
+    const sleep = new Promise(((resolve) => setTimeout(resolve, 5000)))
+    sleep().then(res => {
+
+    })
+  }
+}
+
+
 
 function startExpressServer() {
   const app = express();
   const port = 3330;
-
-  app.use(cors())
+  
+  app.use(cors({
+    origin: '*'
+  }))
   app.use(compression());
-
+  const anvilTimeoutPromise = new Promise((resolve, reject) => {
+    setTimeout(() => {
+      reject(new Error("Anvil Timeout Error"))
+    }, 3 * 60 * 1000)
+  })
   // http://expressjs.com/en/advanced/best-practice-security.html#at-a-minimum-disable-x-powered-by-header
   app.disable("x-powered-by");
   //app.use(express.static(path.join(__dirname, '..', '..', 'backup_frontend')));
@@ -32,6 +54,7 @@ function startExpressServer() {
   app.use(express.json());
   app.use(express.static('public'));
   app.use(bodyParser.json());
+
 
   // OpenAI
   const configuration = new Configuration({
@@ -129,6 +152,31 @@ function startExpressServer() {
     });
   });
 
+  app.get("/get-kube-contexts", async (req, res) => {
+    async function getKubectlContexts() {
+      return new Promise((resolve, reject) => {
+        exec('kubectl config get-contexts -o name', (error, stdout, stderr) => {
+          if (error) {
+            return reject(`Error executing kubectl command: ${error.message}`);
+          }
+          if (stderr) {
+            return reject(`Error in kubectl command output: ${stderr}`);
+          }
+          // Split the output into an array of contexts
+          const contexts = stdout.trim().split('\n');
+          resolve(contexts);
+        });
+      });
+    }
+    try {
+      const contexts = await getKubectlContexts()
+      res.status(200).json(contexts)
+    } catch(err) {
+      console.log(err)
+      res.sendStatus(500)
+    }
+  })
+
   app.post("/api/call-agent", async (req, res) => {
     const { userMessage, agentName, conversationHistory, apiKey} = req.body
     console.log("USER MESSAGE", userMessage);
@@ -188,6 +236,328 @@ function startExpressServer() {
       res.status(500).send({ error: "Error reading directory" });
     }
   });
+  
+
+  
+
+
+  app.post("/initial-anvil-launch", (req, res) => {
+    console.log("INITIAL LAUNCH")
+    if(!electronApp.isPackaged) {
+      res.sendStatus(200)
+    }
+    const anvilDir = path.join(process.resourcesPath, 'server2')
+    try{
+      const anvilFiles = fs.readdirSync(anvilDir)
+      if(!anvilFiles.includes('config.json')) {
+        console.log("CONFIG NOT FOUND")
+        res.status(500).send({error: "CONFIG NOT FOUND"})
+      } else {
+        console.log("CONFIG FOUND")
+        const configFile = path.join(anvilDir, 'config.json')
+        const configBuffer = fs.readFileSync(configFile)
+        const config = JSON.parse(configBuffer)
+        if(config.IsLocal !== true){
+          res.status(500).send({err: "Malformed config.json", kubeErr: "Local must be true"})
+        }
+        if(config.Local.Driver === 'minikube') {
+          console.log("DRIVER IS MINIKUBE#######")
+          const kubeConfig = ['config', 'use-context', 'zetaforge']
+          const kubeExec = spawn('kubectl', kubeConfig)
+          kubeExec.stderr.on('data', (data) => {
+            console.log(`stderr: ${data}`)
+            res.status(500).send({err: "CAN'T SET KUBECONTEXT", kubeErr: data.toString()})
+          })
+
+          const anvilExec = anvilFiles.filter((file) => file.startsWith('s2-'))[0]
+          const runAnvil = new Promise((resolve, reject) => {
+            anvilProcess = spawn(path.join(anvilDir, anvilExec), {
+              cwd: anvilDir,
+              detached: true,
+              stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin, use pipes for stdout and stderr
+            });
+      
+            anvilProcess.stdout.on('data', (data) => {
+                console.log(`stdout: ${data}`);
+                
+                if(data.toString().includes('[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.')){
+                  console.log("ANVIL RUN SUCCESFULLY")
+                  resolve()
+                }
+              });
+                
+            anvilProcess.stderr.on('data', (data) => {
+                console.log(`stderr: ${data}`);
+                if( data.toString().includes("Failed to fetch kubernetes resources;") || data.toString().includes("Failed to get client config;")) {
+                  reject(new Error(`Kubeservices not found: ${data.toString()}`))
+                }
+              });
+                
+            anvilProcess.on('close', (code) => {});
+
+          })
+          console.log("CHECK RES2")
+          console.log(res)
+
+          const runAnvilPromise = Promise.race([anvilTimeoutPromise, runAnvil])
+
+          runAnvilPromise.then((response) => {
+            res.sendStatus(200)
+          }).catch(err => {
+            res.status(500).send({err: "Error while launching anvil" , kubeErr: err.message})
+          })
+        } else {
+          console.log("CHECK KUBECONFIG")
+          console.log(config.KubeContext)
+          const kubeConfig = ['config', 'use-context', config.KubeContext]
+          const kubeExec = spawn('kubectl', kubeConfig)
+          kubeExec.stderr.on('data', (data) => {
+            console.log(`stderr: ${data}`)
+            res.status(500).send({err: "CAN'T SET KUBECONTEXT", kubeErr: data.toString()})
+          })
+          const anvilExec = anvilFiles.filter((file) => file.startsWith('s2-'))[0]
+          const runAnvil = new Promise((resolve, reject) => {
+            anvilProcess = spawn(path.join(anvilDir, anvilExec), {
+              cwd: anvilDir,
+              detached: true,
+              stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin, use pipes for stdout and stderr
+            });
+      
+            anvilProcess.stdout.on('data', (data) => {
+                console.log(`stdout: ${data}`);
+                
+                if(data.toString().includes('[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.')){
+                  console.log("ANVIL RUN SUCCESFULLY")
+                  resolve()
+                }
+              });
+                
+            anvilProcess.stderr.on('data', (data) => {
+                console.log(`stderr: ${data}`);
+                if(data.toString().includes("Failed to fetch kubernetes resources;")|| data.toString().includes("Failed to get client config;")) {
+                  reject(new Error(`Kubeservices not found: ${data.toString()}`))
+                }
+              });
+                
+            anvilProcess.on('close', (code) => {});
+
+          })
+          console.log("CHECK RES2")
+          console.log(res)
+
+          const runAnvilPromise = Promise.race([anvilTimeoutPromise, runAnvil])
+
+          runAnvilPromise.then((response) => {
+            res.sendStatus(200)
+          }).catch(err => {
+            res.status(500).send({err: "Error while launching anvil" , kubeErr: err.message})
+          })
+
+        }
+
+
+      }
+    } catch(err) {
+      res.sendStatus(500)
+    }
+  })
+
+
+  app.post("/create-anvil-config", (req, res) => {
+    console.log("CREATING ANVIL CONFIG")
+    const body = req.body
+    const config = {
+      IsLocal: true,
+      IsDev: true? process.env.VITE_ZETAFORGE_IS_DEV === 'True': false ,
+      ServerPort: parseInt(body.anvilPort),
+      KanikoImage: "gcr.io/kaniko-project/executor:latest",
+      WorkDir: "/app",
+      FileDir: "/files",
+      ComputationFile: "computations.py",
+      EntrypointFile: "entrypoint.py",
+      ServiceAccount: "executor",
+      Bucket: "forge-bucket",
+      Database: "./zetaforge.db",
+      KubeContext: body.KubeContext,
+      SetupVersion: "1",
+      Local: {
+        BucketPort: parseInt(body.s3Port),
+        Driver: body.KubeContext
+      }      
+    }
+    const anvilDir = path.join(process.resourcesPath, 'server2')
+    const configDir = path.join(anvilDir, 'config.json')
+    const configStr = JSON.stringify(config)
+    try{
+      fs.writeFileSync(configDir, configStr)
+      console.log("FILE WRITTEN")
+    } catch(err) {
+      console.log("ERROR HAPPEND WHILE WRITING CONFIG.JS")
+      console.log(err)
+    }
+    const kubectl = ['config', 'use-context', body.KubeContext]
+    const kubectlCmd = spawn('kubectl', kubectl)
+    kubectlCmd.on('error', (data) => {
+      console.log(data)
+      return res.status(500).send({err: "CAN'T SET KUBECONTEXT", kubeErr: data.toString()})
+    })
+
+    res.sendStatus(200)
+
+
+
+  })
+  
+  app.get("/isPackaged", (req, res) => {
+    const isPip = process.env.VITE_IS_PIP === 'True'? true : false
+    return res.status(200).json(electronApp.isPackaged && !isPip)
+  })
+  app.post("/launch-anvil", async (req,res) => {
+    if(!electronApp.isPackaged) {
+      res.sendStatus(200)
+    }
+    const anvilDir = path.join(process.resourcesPath, 'server2')
+    if(anvilProcess !== null) {
+      anvilProcess.kill()
+    }
+    const body = req.body
+
+    
+    const anvilFiles = fs.readdirSync(anvilDir)
+    if(!anvilFiles.includes('config.json')) {
+      console.log("CHECK DEV")
+      console.log(process.env.VITE_ZETAFORGE_IS_DEV)
+      const config = {
+        IsLocal: true,
+        IsDev: true? process.env.VITE_ZETAFORGE_IS_DEV === 'True': false,
+        ServerPort: parseInt(body.anvilPort),
+        KanikoImage: "gcr.io/kaniko-project/executor:latest",
+        WorkDir: "/app",
+        FileDir: "/files",
+        ComputationFile: "computations.py",
+        EntrypointFile: "entrypoint.py",
+        ServiceAccount: "executor",
+        Bucket: "forge-bucket",
+        Database: "./zetaforge.db",
+        KubeContext: body.KubeContext,
+        SetupVersion: "1",
+        Local: {
+          BucketPort: parseInt(body.s3Port),
+          Driver: body.KubeContext
+        }      
+      }
+
+      const configDir = path.join(anvilDir, 'config.json')
+      const configStr = JSON.stringify(config)
+      try{
+        fs.writeFileSync(configDir, configStr)
+        console.log("FILE WRITTEN")
+      } catch(err) {
+        console.log("ERROR HAPPEND WHILE WRITING CONFIG.JS")
+        res.status(500).status({err: "Config error happened", kubeErr: "Error creating config error"})
+
+        console.log(err)
+      }
+
+    } else {
+      console.log("EXCEPTION HAPPEN HERE")
+      //this else is added for minikube case.
+      const configDir = path.join(anvilDir, 'config.json')
+      const configFile = fs.readFileSync(configDir)
+      const config = JSON.parse(configFile)
+      config.KubeContext = body.KubeContext
+      if(config.Local.Driver !== 'minikube') {
+        config.Local.Driver = config.KubeContext
+      } else {
+        config.Local.Driver = 'minikube'
+      }
+
+      const configStr = JSON.stringify(config)
+      try {
+        fs.writeFileSync(configDir, configStr)
+      } catch(err) {
+        res.status(500).status({err: "Config error happened", kubeErr: "Error creating config error"})
+      }
+
+    }
+
+     const configDir = path.join(anvilDir, 'config.json')
+     const configBuffer = fs.readFileSync(configDir)
+     const config = JSON.parse(configBuffer)
+     if(config.Local.Driver === 'minikube') {
+      console.log("DRIVER IS MINIKUBE111")
+      const kubectl = ['config', 'use-context', 'zetaforge']
+      const kubectlCmd = spawn('kubectl', kubectl)
+      kubectlCmd.on('error', (data) => {
+        console.log(data)
+        return res.status(500).send({err: "CAN'T SET KUBECONTEXT", kubeErr: data.toString()})
+      })
+     } else {
+      console.log("CHECK HERE")
+      console.log(config.KubeContext)
+      const KubeContext = config.KubeContext
+      const kubectl = ['config', 'use-context', KubeContext]
+      const kubectlCmd = spawn('kubectl', kubectl)
+      kubectlCmd.on('error', (data) => {
+        console.log(data)
+        res.status(500).send({err: "CAN'T SET KUBECONTEXT", kubeErr: data.toString()})
+      })
+     }
+     const anvilDirContent = fs.readdirSync(anvilDir)
+     const anvilExec = anvilDirContent.filter((file) => file.startsWith('s2-'))[0]
+     console.log("STARTING LAUNCH ANVIL...")
+     const runAnvil = new Promise((resolve, reject) => {
+        anvilProcess = spawn(path.join(anvilDir, anvilExec), {
+          cwd: anvilDir,
+          detached: true,
+          stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin, use pipes for stdout and stderr
+        });
+  
+        anvilProcess.stdout.on('data', (data) => {
+            console.log(`stdout: ${data}`);
+            
+            if(data.toString().includes('[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.')){
+              console.log("ANVIL RUN SUCCESFULLY")
+              resolve()
+            }
+          });
+            
+        anvilProcess.stderr.on('data', (data) => {
+            console.log(`stderr: ${data}`);
+            if(data.toString().includes("Failed to fetch kubernetes resources;"|| data.toString().includes("Failed to get client config;"))){
+              reject(new Error(`Kubeservices not found: ${data.toString()}`))
+            }
+          });
+            
+        anvilProcess.on('close', (code) => {});
+
+      })
+      const runAnvilPromise = Promise.race([anvilTimeoutPromise, runAnvil])
+
+      runAnvilPromise.then((response) => {
+        console.log("LAUNCH SUCCESFULL HAS TO RETURN")
+        res.sendStatus(200)
+      }).catch(err => {
+        res.status(500).send({err: "Error while launching anvil" , kubeErr: err.message})
+      })
+
+
+
+
+ 
+
+})
+
+  app.get("/ping-anvil", (req, res) => {
+    fetch("http://127.0.0.1:8080/ping").then( (response) => {
+      console.log("PING ANVIL")
+      res.sendStatus(200)
+    }
+    ).catch((err) => {
+      console.log(err)
+      res.sendStatus(500)
+    })
+  })
 
   const getFileSystemContent = (dirPath) => {
     const fileSystem = {};
@@ -239,6 +609,13 @@ function startExpressServer() {
 
     return fileSystem;
   };
+  
+  app.post("/launch-anvil-locally", (req, res) => {
+    console.log("RECEIVED REQUEST")
+    const config = req.body
+
+    console.log(config)
+  })
 
   app.post("/new-block-react", (req, res) => {
     const data = req.body;
@@ -278,6 +655,23 @@ function startExpressServer() {
   app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
   });
+
+  process.on('SIGINT', () => {
+    console.log("SIGINT ANVIL")
+    if(anvilProcess !== null) {
+      console.log("KILLING ANVIL...")
+      anvilProcess.kill('SIGINT')
+    }
+  })
+
+  process.on('SIGTERM', () => {
+    console.log("SIGINT ANVIL")
+    if(anvilProcess !== null) {
+      console.log("KILLING ANVIL...")
+      anvilProcess.kill("SIGINT")
+    }
+
+  })
 }
 
-export { startExpressServer };
+export { startExpressServer, gracefullyStopAnvil };
