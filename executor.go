@@ -719,7 +719,7 @@ func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 				var jsonObj map[string]interface{}
 				err := json.Unmarshal([]byte(message), &jsonObj)
 				if err != nil {
-					fmt.Printf("Failed to log: %s", message)
+					log.Printf("Failed to log: %s", message)
 					return
 				}
 
@@ -733,7 +733,7 @@ func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 
 			jsonData, err := json.Marshal(content)
 			if err != nil {
-				fmt.Sprintf("Failed to log: %s", message)
+				log.Printf("Failed to log: %s", message)
 			}
 
 			hub.Broadcast <- Message{
@@ -837,7 +837,6 @@ func cleanupRun(ctx context.Context, db *sql.DB, executionId int64, executionUui
 }
 
 func cloudExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid string, build bool, cfg Config, db *sql.DB, hub *Hub) {
-
 	ctx := context.Background()
 	defer log.Printf("Completed")
 
@@ -878,7 +877,7 @@ func getBuildContextStatus(pipeline *zjson.Pipeline, cfg Config) []zjson.BuildCo
 	for id, block := range pipeline.Pipeline {
 		if len(block.Action.Container.Image) > 0 && !cfg.IsLocal {
 			image := getImage(&block)
-			status, err := checkImage(context, image, cfg)
+			status, _, err := checkImage(context, image, cfg)
 			s3Key := getKanikoBuildContextS3Key(&block, "org")
 
 			if err != nil {

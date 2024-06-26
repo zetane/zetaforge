@@ -3,11 +3,15 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"log"
 	"net/url"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	endpoints "github.com/aws/smithy-go/endpoints"
@@ -28,14 +32,14 @@ type Oracle struct {
 }
 
 type AWS struct {
-	RegistryAddr  string
-	RegistryToken string
-	ClusterIP     string
-	ClusterName   string
-	ClusterRegion string
-	CaCert        string
-	AccessKey     string
-	SecretKey     string
+	RegistryAddr   string
+	RegistrySecret string
+	ClusterIP      string
+	ClusterName    string
+	ClusterRegion  string
+	CaCert         string
+	AccessKey      string
+	SecretKey      string
 }
 
 type Debug struct {
@@ -76,7 +80,42 @@ func s3Client(ctx context.Context, cfg Config) (*s3.Client, error) {
 	return client, nil
 }
 
-func awsToken(ctx context.Context, cfg Config) (string, error) {
+func awsECRClient(ctx context.Context, cfg Config) (*ecr.Client, error) {
+	creds := credentials.NewStaticCredentialsProvider(cfg.Cloud.AWS.AccessKey, cfg.Cloud.AWS.SecretKey, "")
+	region := config.WithRegion(cfg.Cloud.AWS.ClusterRegion)
+	awsConfig, err := config.LoadDefaultConfig(ctx, region, config.WithCredentialsProvider(creds))
+	if err != nil {
+		return &ecr.Client{}, err
+	}
+
+	return ecr.NewFromConfig(awsConfig), nil
+}
+
+// TODO handle expiration date
+func awsECRToken(ctx context.Context, cfg Config) (string, error) {
+	client, err := awsECRClient(ctx, cfg)
+	if err != nil {
+		return "", err
+	}
+	authToken, err := client.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
+	if err != nil {
+		return "", err
+	}
+
+	if len(authToken.AuthorizationData) < 1 {
+		return "", errors.New("No ECR tokens")
+	}
+
+	data, err := base64.StdEncoding.DecodeString(*authToken.AuthorizationData[0].AuthorizationToken)
+	if err != nil {
+		log.Fatal("error:", err)
+	}
+
+	return string(data), nil
+}
+
+// TODO handle expiration date
+func awsEKSToken(ctx context.Context, cfg Config) (string, error) {
 	creds := credentials.NewStaticCredentialsProvider(cfg.Cloud.AWS.AccessKey, cfg.Cloud.AWS.SecretKey, "")
 	region := config.WithRegion(cfg.Cloud.AWS.ClusterRegion)
 	awsConfig, err := config.LoadDefaultConfig(ctx, region, config.WithCredentialsProvider(creds))
@@ -112,7 +151,7 @@ func kubernetesClient(config Config) (clientcmd.ClientConfig, error) {
 	} else {
 		switch config.Cloud.Provider {
 		case "aws":
-			token, err := awsToken(context.TODO(), config)
+			token, err := awsEKSToken(context.TODO(), config)
 			if err != nil {
 				return client, err
 			}
@@ -180,15 +219,22 @@ func registryAddress(config Config) string {
 	}
 }
 
-func registryAuth(config Config) authn.Authenticator {
+func registryAuth(ctx context.Context, config Config) (authn.Authenticator, error) {
 	switch config.Cloud.Provider {
 	case "aws":
+		credentials, err := awsECRToken(ctx, config)
+		if err != nil {
+			return authn.Anonymous, err
+		}
+
+		creds := strings.Split(credentials, ":")
 		auth := authn.FromConfig(
 			authn.AuthConfig{
-				RegistryToken: config.Cloud.AWS.RegistryToken,
+				Username: creds[0],
+				Password: creds[1],
 			},
 		)
-		return auth
+		return auth, nil
 	case "oracle":
 		auth := authn.FromConfig(
 			authn.AuthConfig{
@@ -196,8 +242,8 @@ func registryAuth(config Config) authn.Authenticator {
 				Password: config.Cloud.Oracle.RegistryPass,
 			},
 		)
-		return auth
+		return auth, nil
 	default:
-		return authn.Anonymous
+		return authn.Anonymous, nil
 	}
 }

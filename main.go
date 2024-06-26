@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"server/zjson"
 
+	"github.com/getsentry/sentry-go"
+	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -27,11 +29,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pressly/goose/v3"
 	"github.com/xeipuuv/gojsonschema"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-
-	"github.com/getsentry/sentry-go"
-	sentrygin "github.com/getsentry/sentry-go/gin"
 )
 
 //go:embed db/migrations/*.sql
@@ -349,27 +346,6 @@ func main() {
 	router.Use(sentrygin.New(sentrygin.Options{}))
 
 	router.GET("/ping", func(ctx *gin.Context) {
-		client, err := kubernetesClient(config)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		clientConfig, err := client.ClientConfig()
-		if err != nil {
-			log.Printf("Failed to get client config; err=%v", err)
-			return
-		}
-
-		clientset, err := kubernetes.NewForConfig(clientConfig)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		res, err := clientset.CoreV1().Pods("default").List(context.TODO(), metav1.ListOptions{})
-		log.Println(res, err)
-
 		ctx.String(http.StatusOK, "pong")
 	})
 	router.POST("/execute", func(ctx *gin.Context) {
@@ -575,7 +551,7 @@ func main() {
 
 		res, httpErr := filterPipelines(ctx, db, int64(limit), int64(offset))
 		if httpErr != nil {
-			log.Printf("failed to get filter pipelines; err=%v", err)
+			log.Printf("failed to get filter pipelines; err=%v", httpErr)
 			ctx.String(httpErr.Status(), err.Error())
 			return
 		}
@@ -603,6 +579,7 @@ func main() {
 			newRes, err := newResponsePipelinesExecution(execution, logOutput, s3key)
 			if err != nil {
 				ctx.String(err.Status(), err.Error())
+				return
 			}
 			response = append(response, newRes)
 		}
