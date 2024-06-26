@@ -43,13 +43,7 @@ type AWS struct {
 }
 
 type Debug struct {
-	RegistryAddr string
 	RegistryPort int
-	RegistryUser string
-	RegistryPass string
-	ClusterIP    string
-	Token        string
-	CaCert       string
 }
 
 const BUCKET = "zetaforge"
