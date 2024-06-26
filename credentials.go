@@ -209,7 +209,7 @@ func registryAddress(config Config) string {
 	case "oracle":
 		return config.Cloud.Oracle.RegistryAddr
 	default:
-		return config.Cloud.Debug.RegistryAddr
+		return ""
 	}
 }
 
