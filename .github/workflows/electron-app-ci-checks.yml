@@ -1,0 +1,97 @@
+name: Electron App CI Checks
+
+on:
+  push:
+    branches:
+      - 'main'
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  install:
+    strategy:
+      matrix:
+        node-version: [20.x]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: './frontend/package-lock.json'
+    - name: install
+      run: npm ci
+      working-directory: ./frontend
+
+  test:
+    needs: install
+    strategy:
+      matrix:
+        node-version: [20.x]
+        os:
+        - "windows-latest"
+        - "macos-latest"
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: './frontend/package-lock.json'
+    - name: install
+      run: npm ci
+      working-directory: ./frontend
+    - name: test
+      run: npm run test
+      working-directory: ./frontend
+
+  format:
+    needs: install
+    strategy:
+      matrix:
+        node-version: [20.x]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: './frontend/package-lock.json'
+    - name: install
+      run: npm ci
+      working-directory: ./frontend
+    - name: format
+      run: npm run format
+      working-directory: ./frontend
+
+  lint:
+    needs: install
+    strategy:
+      matrix:
+        node-version: [20.x]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: './frontend/package-lock.json'
+    - name: install
+      run: npm ci
+      working-directory: ./frontend
+    - name: lint
+      run: npm run lint
+      working-directory: ./frontend
