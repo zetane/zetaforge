@@ -1,0 +1,41 @@
+name: Anvil CI Checks
+
+on:
+  push:
+    branches:
+      - 'main'
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.22']
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+    - name: test
+      run: go test -v ./...
+
+  format:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.22']
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+    - name: format
+      run: gofmt -d -l -e .
+
