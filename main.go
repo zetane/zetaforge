@@ -282,7 +282,12 @@ func setupSentry() {
 
 func main() {
 	ctx := context.Background()
-	file, err := os.ReadFile("config.json")
+	configPath := os.Getenv("ZETAFORGE_CONFIG")
+	if configPath == "" {
+		configPath = "config.json"
+	}
+
+	file, err := os.ReadFile(configPath)
 	if err != nil {
 		log.Fatalf("config file missing; err=%v", err)
 		return
@@ -552,7 +557,7 @@ func main() {
 		res, httpErr := filterPipelines(ctx, db, int64(limit), int64(offset))
 		if httpErr != nil {
 			log.Printf("failed to get filter pipelines; err=%v", httpErr)
-			ctx.String(httpErr.Status(), err.Error())
+			ctx.String(httpErr.Status(), httpErr.Error())
 			return
 		}
 
