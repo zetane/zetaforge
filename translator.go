@@ -7,13 +7,17 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"server/zjson"
 
 	wfv1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/go-cmd/cmd"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -27,137 +31,147 @@ type TagList struct {
 	Tags []string `json:"tags"`
 }
 
-func checkImage(ctx context.Context, tag string, cfg Config) (bool, error) {
+func checkImage(ctx context.Context, image string, cfg Config) (bool, bool, error) {
 	if cfg.IsLocal {
 		if cfg.Local.Driver == "minikube" {
 			minikubeImage := cmd.NewCmd("minikube", "-p", "zetaforge", "image", "ls")
 			<-minikubeImage.Start()
 			for _, line := range minikubeImage.Status().Stdout {
-				if "docker.io/"+tag == line {
-					return true, nil
+				if "docker.io/"+image == line {
+					return true, false, nil
 				}
 			}
-			return false, nil
+			return false, false, nil
 		} else {
 			apiClient, err := client.NewClientWithOpts(
 				client.WithAPIVersionNegotiation(),
 			)
 			if err != nil {
-				return false, err
+				return false, false, err
 			}
 			defer apiClient.Close()
 
 			imageList, err := apiClient.ImageList(ctx, types.ImageListOptions{})
 			if err != nil {
-				return false, err
+				return false, false, err
 			}
 
-			for _, image := range imageList {
-				for _, tagName := range image.RepoTags {
-					if tag == tagName {
-						return true, nil
+			for _, images := range imageList {
+				for _, tag := range images.RepoTags {
+					if image == tag {
+						return true, false, nil
 					}
 				}
 
 			}
 
-			return false, nil
+			return false, false, nil
 		}
-	} else if cfg.Cloud.IsDebug {
+	} else if cfg.Cloud.Provider == "Debug" {
+		//TODO use the name package instead
 		response, err := http.Get(fmt.Sprintf("http://localhost:%d/v2/_catalog", cfg.Cloud.RegistryPort))
 		if err != nil {
-			return false, err
+			return false, false, err
 		}
 
 		defer response.Body.Close()
 
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
-			return false, err
+			return false, false, err
 		}
 
 		var catalog Catalog
 		if err := json.Unmarshal(body, &catalog); err != nil {
-			return false, err
+			return false, false, err
 		}
 
 		for _, name := range catalog.Repositories {
 			response, err := http.Get(fmt.Sprintf("http://localhost:%d/v2/%s/tags/list", cfg.Cloud.RegistryPort, name))
 			if err != nil {
-				return false, err
+				return false, false, err
 			}
 
 			defer response.Body.Close()
 			body, err := io.ReadAll(response.Body)
 			if err != nil {
-				return false, err
+				return false, false, err
 			}
 			var tagList TagList
 			if err := json.Unmarshal(body, &tagList); err != nil {
-				return false, err
+				return false, false, err
 			}
-			for _, tagName := range tagList.Tags {
-				expectedTagName := fmt.Sprintf("localhost:5000/%s:%s", name, tagName)
-				if tag == expectedTagName {
-					return true, nil
+			for _, tag := range tagList.Tags {
+				expectedTagName := fmt.Sprintf("localhost:5000/%s:%s", name, tag)
+				if image == expectedTagName {
+					return true, false, nil
 				}
 			}
 		}
 
-		return false, nil
+		return false, false, nil
 	} else {
-		response, err := http.Get("http://registry:5000/v2/_catalog")
+		image := strings.Split(image, ":")
+		repo, err := name.NewRepository(registryAddress(cfg) + "/zetaforge/" + image[0])
 		if err != nil {
-			return false, err
+			return false, false, err
 		}
 
-		defer response.Body.Close()
-
-		body, err := io.ReadAll(response.Body)
+		auth, err := registryAuth(ctx, cfg)
 		if err != nil {
-			return false, err
+			return false, false, err
 		}
 
-		var catalog Catalog
-		if err := json.Unmarshal(body, &catalog); err != nil {
-			return false, err
+		data, err := remote.List(repo, remote.WithAuth(auth))
+
+		if err != nil {
+			return false, true, nil //We want to trigger a build even if the repo doesn't exists
 		}
 
-		for _, name := range catalog.Repositories {
-			response, err := http.Get("http://registry:5000/v2/" + name + "/tags/list")
-			if err != nil {
-				return false, err
-			}
-
-			defer response.Body.Close()
-			body, err := io.ReadAll(response.Body)
-			if err != nil {
-				return false, err
-			}
-			var tagList TagList
-			if err := json.Unmarshal(body, &tagList); err != nil {
-				return false, err
-			}
-			for _, tagName := range tagList.Tags {
-				if tag == "localhost:31111/"+name+":"+tagName {
-					return true, nil
-				}
+		for _, tag := range data {
+			if image[1] == tag {
+				return true, false, nil
 			}
 		}
 
-		return false, nil
+		return false, false, nil
 	}
 }
 
-func blockTemplate(block *zjson.Block, blockKey string, organization string, key string, cfg Config) *wfv1.Template {
+func createRepository(ctx context.Context, image string, cfg Config) error {
+	if cfg.IsLocal {
+		return nil
+	} else if cfg.Cloud.Provider == "aws" {
+		image := strings.Split(image, ":")
+		client, err := awsECRClient(ctx, cfg)
+		if err != nil {
+			return err
+		}
+
+		fullName := fmt.Sprintf("zetaforge/%s", image[0])
+		_, err = client.CreateRepository(ctx, &ecr.CreateRepositoryInput{
+			RepositoryName: &fullName,
+		})
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	return nil
+}
+
+func blockTemplate(block *zjson.Block, blockKey string, key string, cfg Config) *wfv1.Template {
 	image := getImage(block)
 	if cfg.IsLocal {
 		image = "zetaforge/" + image
+	} else if cfg.Cloud.Provider == "Debug" {
+		image = fmt.Sprintf("localhost:%d/zetaforge/%s", cfg.Cloud.RegistryPort, image)
 	} else {
-		image = fmt.Sprintf("localhost:%d/%s", cfg.Cloud.RegistryPort, image)
+		image = registryAddress(cfg) + "/zetaforge/" + image
 	}
 
-	computationName := getComputaionName(blockKey, organization, cfg)
 	entrypoint := wfv1.Artifact{
 		Name: "entrypoint",
 		Path: cfg.WorkDir + "/" + cfg.EntrypointFile,
@@ -175,7 +189,7 @@ func blockTemplate(block *zjson.Block, blockKey string, organization string, key
 		Path: cfg.WorkDir + "/" + cfg.ComputationFile,
 		ArtifactLocation: wfv1.ArtifactLocation{
 			S3: &wfv1.S3Artifact{
-				Key: key + "/" + computationName,
+				Key: key + "/" + blockKey + ".py",
 			},
 		},
 		Archive: &wfv1.ArchiveStrategy{
@@ -199,10 +213,10 @@ func blockTemplate(block *zjson.Block, blockKey string, organization string, key
 func kanikoTemplate(block *zjson.Block, organization string, cfg Config) *wfv1.Template {
 	if cfg.IsLocal {
 		return nil
-	} else if cfg.Cloud.IsDebug {
+	} else if cfg.Cloud.Provider == "Debug" {
 		name := getKanikoTemplateName(block, organization)
 		tag := getImage(block)
-		image := fmt.Sprintf("registry:%d/%s", cfg.Cloud.RegistryPort, tag)
+		image := fmt.Sprintf("registry:%d/zetaforge/%s", cfg.Cloud.Debug.RegistryPort, tag)
 		cmd := []string{
 			"/kaniko/executor",
 			"--context",
@@ -211,7 +225,7 @@ func kanikoTemplate(block *zjson.Block, organization string, cfg Config) *wfv1.T
 			image,
 			"--insecure",
 			"--compressed-caching=false",
-			"--snapshotMode=redo",
+			"--snapshot-mode=redo",
 			"--use-new-run",
 		}
 		artifact := wfv1.Artifact{
@@ -236,59 +250,92 @@ func kanikoTemplate(block *zjson.Block, organization string, cfg Config) *wfv1.T
 		}
 	} else {
 		name := getKanikoTemplateName(block, organization)
-		image := cfg.Cloud.RegistryAddr + ":" + getImage(block)
+		image := registryAddress(cfg) + "/zetaforge/" + block.Action.Container.Image
 		cmd := []string{
 			"/kaniko/executor",
 			"--context",
-			"tar:///workspace/context.tar.gz",
+			"dir:///workspace/context",
 			"--destination",
 			image,
 			"--compressed-caching=false",
-			"--snapshotMode=redo",
+			"--snapshot-mode=redo",
 			"--use-new-run",
 		}
-		return &wfv1.Template{
-			Name: name + "-build",
-			Container: &corev1.Container{
-				Image:   cfg.KanikoImage,
-				Command: cmd,
-				VolumeMounts: []corev1.VolumeMount{
-					{
-						Name:      "kaniko-secret",
-						MountPath: "/kaniko/.docker",
+		var volumes []corev1.Volume
+		var volumeMounts []corev1.VolumeMount
+
+		if cfg.Cloud.Provider == "aws" {
+			volumes = append(volumes, corev1.Volume{
+				Name: "kaniko-secret",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: cfg.Cloud.AWS.RegistrySecret,
 					},
 				},
-			},
-			Inputs: wfv1.Inputs{Artifacts: []wfv1.Artifact{
-				{
-					Name: "context",
-					Path: "/workspace/context",
-					ArtifactLocation: wfv1.ArtifactLocation{
-						S3: &wfv1.S3Artifact{
-							Key: getKanikoBuildContextS3Key(block, organization),
+			})
+
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      "kaniko-secret",
+				MountPath: "/root/.aws/",
+			})
+
+			volumes = append(volumes, corev1.Volume{
+				Name: "kaniko-config",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: cfg.Cloud.Registry,
 						},
 					},
-					Archive: &wfv1.ArchiveStrategy{
-						None: &wfv1.NoneStrategy{},
-					},
 				},
-			}},
-			Volumes: []corev1.Volume{
-				{
-					Name: "kaniko-secret",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName: cfg.Cloud.Registry,
-							Items: []corev1.KeyToPath{
-								{
-									Key:  ".dockerconfigjson",
-									Path: "config.json",
-								},
+			})
+
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      "kaniko-config",
+				MountPath: "/kaniko/.docker/",
+			})
+		} else if cfg.Cloud.Provider == "oracle" {
+			volumes = append(volumes, corev1.Volume{
+				Name: "kaniko-secret",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: cfg.Cloud.Registry,
+						Items: []corev1.KeyToPath{
+							{
+								Key:  ".dockerconfigjson",
+								Path: "config.json",
 							},
 						},
 					},
 				},
+			})
+
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      "kaniko-secret",
+				MountPath: "/kaniko/.docker/",
+			})
+		}
+		artifact := wfv1.Artifact{
+			Name: "context",
+			Path: "/workspace/context",
+			ArtifactLocation: wfv1.ArtifactLocation{
+				S3: &wfv1.S3Artifact{
+					Key: getKanikoBuildContextS3Key(block, organization),
+				},
 			},
+			Archive: &wfv1.ArchiveStrategy{
+				None: &wfv1.NoneStrategy{},
+			},
+		}
+		return &wfv1.Template{
+			Name: name + "-build",
+			Container: &corev1.Container{
+				Image:        cfg.KanikoImage,
+				Command:      cmd,
+				VolumeMounts: volumeMounts,
+			},
+			Inputs:  wfv1.Inputs{Artifacts: []wfv1.Artifact{artifact}},
+			Volumes: volumes,
 		}
 	}
 
@@ -319,14 +366,21 @@ func translate(ctx context.Context, pipeline *zjson.Pipeline, organization strin
 	templates := make(map[string]*wfv1.Template)
 	for id, block := range pipeline.Pipeline {
 		blockKey := id
-		template := blockTemplate(&block, blockKey, organization, key, cfg)
+		template := blockTemplate(&block, blockKey, key, cfg)
 		task := wfv1.DAGTask{Name: template.Name, Template: template.Name}
 
 		if len(block.Action.Container.Image) > 0 {
 			kaniko := kanikoTemplate(&block, organization, cfg)
-			built, err := checkImage(ctx, template.Container.Image, cfg)
+			built, repo, err := checkImage(ctx, getImage(&block), cfg)
 			if err != nil {
 				return &workflow, blocks, err
+			}
+
+			if repo {
+				err = createRepository(ctx, getImage(&block), cfg)
+				if err != nil {
+					return &workflow, blocks, err
+				}
 			}
 
 			blockPath := filepath.Join(pipeline.Build, blockKey)
@@ -392,11 +446,13 @@ func translate(ctx context.Context, pipeline *zjson.Pipeline, organization strin
 			})
 		}
 
-		var filesName string
-		if cfg.IsLocal || cfg.Cloud.IsDebug {
-			filesName = key
-		} else {
-			filesName = organization + "/" + key
+		if cfg.Cloud.Provider == "aws" {
+			workflow.Spec.ImagePullSecrets = []corev1.LocalObjectReference{
+				{
+					Name: cfg.Cloud.AWS.RegistrySecret,
+				},
+			}
+		} else if cfg.Cloud.Provider == "oracle" {
 			workflow.Spec.ImagePullSecrets = []corev1.LocalObjectReference{
 				{
 					Name: cfg.Cloud.Registry,
@@ -409,7 +465,7 @@ func translate(ctx context.Context, pipeline *zjson.Pipeline, organization strin
 			Path: cfg.FileDir,
 			ArtifactLocation: wfv1.ArtifactLocation{
 				S3: &wfv1.S3Artifact{
-					Key: filesName,
+					Key: key,
 				},
 			},
 			Archive: &wfv1.ArchiveStrategy{
@@ -421,7 +477,7 @@ func translate(ctx context.Context, pipeline *zjson.Pipeline, organization strin
 			Path: cfg.FileDir,
 			ArtifactLocation: wfv1.ArtifactLocation{
 				S3: &wfv1.S3Artifact{
-					Key: filesName,
+					Key: key,
 				},
 			},
 			Archive: &wfv1.ArchiveStrategy{
@@ -459,14 +515,6 @@ func translate(ctx context.Context, pipeline *zjson.Pipeline, organization strin
 
 func getImage(block *zjson.Block) string {
 	return block.Action.Container.Image + ":" + block.Action.Container.Version
-}
-
-func getComputaionName(blockKey string, organization string, cfg Config) string {
-	if cfg.IsLocal || cfg.Cloud.IsDebug {
-		return blockKey + ".py"
-	} else {
-		return organization + "-" + blockKey + ".py"
-	}
 }
 
 func getKanikoTemplateName(block *zjson.Block, organization string) string {

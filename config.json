@@ -18,7 +18,9 @@
 	},
 
 	"Cloud": {
-		"RegistryPort": 5000,
-		"IsDebug": true
+		"Provider": "debug",
+		"Debug": {
+			"RegistryPort": 5000
+		}
 	}
 } 

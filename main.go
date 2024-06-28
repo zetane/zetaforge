@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"encoding/base64"
 	"io"
 	"log"
 	"net/http"
@@ -20,6 +19,8 @@ import (
 	"fmt"
 	"server/zjson"
 
+	"github.com/getsentry/sentry-go"
+	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -28,11 +29,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pressly/goose/v3"
 	"github.com/xeipuuv/gojsonschema"
-	"k8s.io/client-go/tools/clientcmd"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-
-	"github.com/getsentry/sentry-go"
-	sentrygin "github.com/getsentry/sentry-go/gin"
 )
 
 //go:embed db/migrations/*.sql
@@ -61,15 +57,11 @@ type Local struct {
 }
 
 type Cloud struct {
-	Registry     string
-	RegistryAddr string
-	RegistryPort int
-	IsDebug      bool
-	RegistryUser string
-	RegistryPass string
-	ClusterIP    string
-	Token        string
-	CaCert       string
+	Provider string
+	Registry string
+	Oracle   `json:"Oracle,omitempty"`
+	AWS      `json:"AWS,omitempty"`
+	Debug    `json:"Debug,omitempty"`
 }
 
 type WebSocketWriter struct {
@@ -290,7 +282,12 @@ func setupSentry() {
 
 func main() {
 	ctx := context.Background()
-	file, err := os.ReadFile("config.json")
+	configPath := os.Getenv("ZETAFORGE_CONFIG")
+	if configPath == "" {
+		configPath = "config.json"
+	}
+
+	file, err := os.ReadFile(configPath)
 	if err != nil {
 		log.Fatalf("config file missing; err=%v", err)
 		return
@@ -320,57 +317,16 @@ func main() {
 		log.Fatalf("failed to migrate database; err=%v", err)
 	}
 
-	var client clientcmd.ClientConfig
-	if config.IsLocal {
-		client = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			clientcmd.NewDefaultClientConfigLoadingRules(),
-			&clientcmd.ConfigOverrides{},
-		)
-
+	if config.IsLocal || config.Cloud.Provider == "Debug" {
 		// Switching to Cobra if we need more arguments
 		if len(os.Args) > 1 {
 			if os.Args[1] == "--uninstall" {
-				uninstall(ctx, client, db)
+				uninstall(ctx, config, db)
 				return
 			}
 			os.Exit(1)
 		}
-		setup(ctx, config, client, db)
-	} else if config.Cloud.IsDebug {
-		client = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			clientcmd.NewDefaultClientConfigLoadingRules(),
-			&clientcmd.ConfigOverrides{},
-		)
-
-		// Switching to Cobra if we need more arguments
-		if len(os.Args) > 1 {
-			if os.Args[1] == "--uninstall" {
-				uninstall(ctx, client, db)
-				return
-			}
-			os.Exit(1)
-		}
-	} else {
-		cacert, err := base64.StdEncoding.DecodeString(config.Cloud.CaCert)
-		if err != nil {
-			log.Fatalf("invalid CA certificate; err=%v", err)
-		}
-
-		cfg := clientcmdapi.NewConfig()
-		cfg.Clusters["zetacluster"] = &clientcmdapi.Cluster{
-			Server:                   "https://" + config.Cloud.ClusterIP,
-			CertificateAuthorityData: cacert,
-		}
-		cfg.AuthInfos["zetaauth"] = &clientcmdapi.AuthInfo{
-			Token: config.Cloud.Token,
-		}
-		cfg.Contexts["zetacontext"] = &clientcmdapi.Context{
-			Cluster:  "zetacluster",
-			AuthInfo: "zetaauth",
-		}
-		cfg.CurrentContext = "zetacontext"
-
-		client = clientcmd.NewDefaultClientConfig(*cfg, &clientcmd.ConfigOverrides{})
+		setup(ctx, config, db)
 	}
 
 	hub := newHub()
@@ -418,10 +374,10 @@ func main() {
 			ctx.String(err.Status(), err.Error())
 			return
 		}
-		if config.IsLocal || config.Cloud.IsDebug {
-			go localExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, client, db, hub)
+		if config.IsLocal || config.Cloud.Provider == "Debug" {
+			go localExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, db, hub)
 		} else {
-			go cloudExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, client, db, hub)
+			go cloudExecute(&execution.Pipeline, newExecution.ID, execution.Id, execution.Build, config, db, hub)
 		}
 
 		retData, err := filterPipeline(ctx, db, execution.Id)
@@ -524,9 +480,9 @@ func main() {
 			return
 		}
 
-		argoErr := terminateArgo(ctx, client, db, res.Workflow.String, res.ID)
+		argoErr := terminateArgo(ctx, config, db, res.Workflow.String, res.ID)
 		if argoErr != nil {
-			ctx.String(500, fmt.Sprintf("%v", argoErr))
+			ctx.String(http.StatusInternalServerError, fmt.Sprintf("%v", argoErr))
 			return
 		}
 		response := newResponseExecutionsRow(res)
@@ -600,8 +556,8 @@ func main() {
 
 		res, httpErr := filterPipelines(ctx, db, int64(limit), int64(offset))
 		if httpErr != nil {
-			log.Printf("failed to get filter pipelines; err=%v", err)
-			ctx.String(httpErr.Status(), err.Error())
+			log.Printf("failed to get filter pipelines; err=%v", httpErr)
+			ctx.String(httpErr.Status(), httpErr.Error())
 			return
 		}
 
@@ -628,6 +584,7 @@ func main() {
 			newRes, err := newResponsePipelinesExecution(execution, logOutput, s3key)
 			if err != nil {
 				ctx.String(err.Status(), err.Error())
+				return
 			}
 			response = append(response, newRes)
 		}
@@ -718,9 +675,9 @@ func main() {
 			ctx.String(err.Status(), err.Error())
 			return
 		}
-		argoErr := stopArgo(ctx, res.Uuid, client)
+		argoErr := stopArgo(ctx, res.Uuid, config)
 		if argoErr != nil {
-			ctx.String(500, fmt.Sprintf("%v", argoErr))
+			ctx.String(http.StatusInternalServerError, fmt.Sprintf("%v", argoErr))
 			return
 		}
 		ctx.Status(http.StatusOK)
@@ -756,10 +713,10 @@ func main() {
 			return
 		}
 
-		if config.IsLocal || config.Cloud.IsDebug {
-			go localExecute(&pipeline, res.ID, executionId.String(), false, config, client, db, hub)
+		if config.IsLocal || config.Cloud.Provider == "Debug" {
+			go localExecute(&pipeline, res.ID, executionId.String(), false, config, db, hub)
 		} else {
-			go cloudExecute(&pipeline, newExecution.ID, executionId.String(), false, config, client, db, hub)
+			go cloudExecute(&pipeline, newExecution.ID, executionId.String(), false, config, db, hub)
 		}
 
 		newRes := make(map[string]any)
