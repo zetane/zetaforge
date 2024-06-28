@@ -790,7 +790,6 @@ func localExecute(pipeline *zjson.Pipeline, executionId int64, executionUuid str
 	}
 
 	workflow, err = runArgo(ctx, workflow, executionId, client, db, hub)
-	log.Printf("Name: %v", workflow.Name)
 	if workflow != nil {
 		defer deleteArgo(ctx, workflow.Name, client)
 	}

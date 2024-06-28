@@ -1,8 +1,11 @@
-import { drawflowEditorAtom } from '@/atoms/drawflowAtom';
-import { pipelineAtom } from '@/atoms/pipelineAtom';
-import { BLOCK_SPECS_FILE_NAME, CHAT_HISTORY_FILE_NAME } from '@/utils/constants';
-import { updateSpecs } from '@/utils/specs';
-import { trpc } from '@/utils/trpc';
+import { drawflowEditorAtom } from "@/atoms/drawflowAtom";
+import { pipelineAtom } from "@/atoms/pipelineAtom";
+import {
+  BLOCK_SPECS_FILE_NAME,
+  CHAT_HISTORY_FILE_NAME,
+} from "@/utils/constants";
+import { updateSpecs } from "@/utils/specs";
+import { trpc } from "@/utils/trpc";
 import {
   Document,
   DocumentDownload,
@@ -11,18 +14,15 @@ import {
   Save,
 } from "@carbon/icons-react";
 import { Button, Modal, TreeNode, TreeView } from "@carbon/react";
-import { useAtom } from 'jotai';
-import { useImmerAtom } from 'jotai-immer';
+import { useAtom } from "jotai";
+import { useImmerAtom } from "jotai-immer";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorCodeMirror, ViewerCodeMirror } from "./CodeMirrorComponents";
 import ComputationsFileEditor from "./ComputationsFileEditor";
 import Splitter from "./Splitter";
 
-const EDIT_ONLY_FILES = [BLOCK_SPECS_FILE_NAME, CHAT_HISTORY_FILE_NAME]
-export default function DirectoryViewer({
-  blockPath,
-  blockKey,
-}) {
+const EDIT_ONLY_FILES = [BLOCK_SPECS_FILE_NAME, CHAT_HISTORY_FILE_NAME];
+export default function DirectoryViewer({ blockPath, blockKey }) {
   const serverAddress = "http://localhost:3330";
   const [fileSystem, setFileSystem] = useState({});
   const [currentFile, setCurrentFile] = useState({});
@@ -39,7 +39,7 @@ export default function DirectoryViewer({
   const saveBlockSpecs = trpc.saveBlockSpecs.useMutation();
 
   useEffect(() => {
-    fetchFileSystem()
+    fetchFileSystem();
   }, [pipeline]);
 
   const handleFileImport = () => {
@@ -102,7 +102,7 @@ export default function DirectoryViewer({
     const formData = new FormData();
 
     for (let i = 0; i < files.length; i++) {
-      formData.append("files", files[i])
+      formData.append("files", files[i]);
       formData.append("paths", files[i].webkitRelativePath);
     }
 
@@ -124,7 +124,7 @@ export default function DirectoryViewer({
   const handleModalConfirm = (e) => {
     saveChanges(e);
     if (pendingFile) {
-      const relPath = pendingFile.replaceAll('\\', '/')
+      const relPath = pendingFile.replaceAll("\\", "/");
       const pathSegments = relPath.split("/");
       let fileContent = fileSystem;
 
@@ -183,7 +183,7 @@ export default function DirectoryViewer({
           };
         }
       };
-      let relPath = folderPath.replaceAll('\\', '/')
+      let relPath = folderPath.replaceAll("\\", "/");
 
       return toggleFolder(relPath.split("/"), prevFileSystem);
     });
@@ -198,7 +198,7 @@ export default function DirectoryViewer({
     }));
 
     setFileSystem((prevFileSystem) => {
-      const relPath = currentFile.path.replaceAll('\\', '/')
+      const relPath = currentFile.path.replaceAll("\\", "/");
       const pathSegments = relPath.split("/");
       let updatedFileSystem = { ...prevFileSystem };
 
@@ -221,8 +221,8 @@ export default function DirectoryViewer({
   };
 
   const isComputation = (path) => {
-    return path.endsWith("computations.py")
-  }
+    return path.endsWith("computations.py");
+  };
 
   const saveChanges = (e) => {
     if (!currentFile || !currentFile.path) {
@@ -233,7 +233,7 @@ export default function DirectoryViewer({
     const saveData = {
       pipelinePath: pipeline.buffer,
       filePath: currentFile.path,
-      content: currentFile.content
+      content: currentFile.content,
     };
 
     fetch(`${serverAddress}/save-file`, {
@@ -248,15 +248,25 @@ export default function DirectoryViewer({
         setUnsavedChanges(false);
         if (isComputation(currentFile.path)) {
           try {
-            const newSpecsIO = await compileComputation.mutateAsync({ blockPath: blockPath });
-            const newSpecs = await updateSpecs(blockKey, newSpecsIO, pipeline.data, editor);
+            const newSpecsIO = await compileComputation.mutateAsync({
+              blockPath: blockPath,
+            });
+            const newSpecs = await updateSpecs(
+              blockKey,
+              newSpecsIO,
+              pipeline.data,
+              editor,
+            );
             setPipeline((draft) => {
               draft.data[blockKey] = newSpecs;
-            })
-            await saveBlockSpecs.mutateAsync({ blockPath: blockPath, blockSpecs: newSpecs });
+            });
+            await saveBlockSpecs.mutateAsync({
+              blockPath: blockPath,
+              blockSpecs: newSpecs,
+            });
             fetchFileSystem();
           } catch (error) {
-            console.error(error)
+            console.error(error);
             setCompilationErrorToast(true);
           }
         }
@@ -271,12 +281,12 @@ export default function DirectoryViewer({
     const content = folderData && folderData.content ? folderData.content : {};
     const currentPath = parentPath ? `${parentPath}/${folder}` : folder;
 
-    const specialFiles = [
-      "computations.py", "Dockerfile", "requirements.txt"
-    ];
+    const specialFiles = ["computations.py", "Dockerfile", "requirements.txt"];
 
     const isSpecialFile = specialFiles.includes(folder);
-    const textStyle = isSpecialFile ? { color: "darkorange", paddingRight: "4px", paddingLeft: "4px" } : {};
+    const textStyle = isSpecialFile
+      ? { color: "darkorange", paddingRight: "4px", paddingLeft: "4px" }
+      : {};
 
     const handleFileClick = (filePath) => {
       if (unsavedChanges) {
@@ -302,13 +312,7 @@ export default function DirectoryViewer({
             ? onToggle(currentPath)
             : handleFileClick(currentPath)
         }
-        label={
-          <span
-            style={textStyle}
-          >
-            {folder}
-          </span>
-        }
+        label={<span style={textStyle}>{folder}</span>}
         renderIcon={folderData.type === "folder" ? Folder : Document}
         isExpanded={folderData.type === "folder" && folderData.expanded}
       >
@@ -318,7 +322,7 @@ export default function DirectoryViewer({
           )}
       </TreeNode>
     );
-  } 
+  };
 
   return (
     <div className="flex h-full">
@@ -360,8 +364,12 @@ export default function DirectoryViewer({
             hidden
           />
         </div>
-        <div className="w-80 overflow-y-auto mt-1">
-          <TreeView label="directory view" selected={currentFile.file} hideLabel>
+        <div className="mt-1 w-80 overflow-y-auto">
+          <TreeView
+            label="directory view"
+            selected={currentFile.file}
+            hideLabel
+          >
             {Object.entries(fileSystem).map(([folder, folderData]) =>
               renderTreeNodes(folder, folderData),
             )}
@@ -369,7 +377,7 @@ export default function DirectoryViewer({
         </div>
       </div>
       <Splitter />
-      <div className="w-full min-w-0 flex flex-col">
+      <div className="flex w-full min-w-0 flex-col">
         <span className="text-md text-gray-30 mt-2">
           {currentFile.path ? <span>{currentFile.path}</span> : null}
         </span>
@@ -378,14 +386,13 @@ export default function DirectoryViewer({
         ) : (
           currentFile &&
           currentFile.path && (
-              <div className="relative overflow-y-auto mt-6 px-5">
+            <div className="relative mt-6 overflow-y-auto px-5">
               {currentFile.path.endsWith("computations.py") ? (
                 <ComputationsFileEditor fetchFileSystem={fetchFileSystem} />
-                ) : EDIT_ONLY_FILES.some(fileName =>
-                currentFile.path.endsWith(fileName)) ? (
-                      <ViewerCodeMirror
-                  code={currentFile.content || ""}
-                />
+              ) : EDIT_ONLY_FILES.some((fileName) =>
+                  currentFile.path.endsWith(fileName),
+                ) ? (
+                <ViewerCodeMirror code={currentFile.content || ""} />
               ) : (
                 <>
                   <EditorCodeMirror
@@ -400,7 +407,7 @@ export default function DirectoryViewer({
                       tooltipPosition="left"
                       hasIconOnly
                       size="md"
-                      onClick={saveChanges}
+                      onClick={(e) => saveChanges(e)}
                     />
                   </div>
                 </>

@@ -1,37 +1,27 @@
-import { openAIApiKeyAtom } from '@/atoms/apiKeysAtom';
-import { compilationErrorToastAtom } from '@/atoms/compilationErrorToast';
-import { drawflowEditorAtom } from '@/atoms/drawflowAtom';
+import { openAIApiKeyAtom } from "@/atoms/apiKeysAtom";
+import { compilationErrorToastAtom } from "@/atoms/compilationErrorToast";
+import { drawflowEditorAtom } from "@/atoms/drawflowAtom";
 import { blockEditorRootAtom } from "@/atoms/editorAtom";
-import { pipelineAtom } from '@/atoms/pipelineAtom';
-import { updateSpecs } from '@/utils/specs';
-import { trpc } from '@/utils/trpc';
-import {
-  Bot,
-  Edit,
-  Save,
-  SendFilled
-} from "@carbon/icons-react";
-import {
-  Button,
-  IconButton,
-  Loading,
-  RadioButton
-} from "@carbon/react";
+import { pipelineAtom } from "@/atoms/pipelineAtom";
+import { updateSpecs } from "@/utils/specs";
+import { trpc } from "@/utils/trpc";
+import { Bot, Edit, Save, SendFilled } from "@carbon/icons-react";
+import { Button, IconButton, Loading, RadioButton } from "@carbon/react";
 import { useAtom } from "jotai";
-import { useImmerAtom } from 'jotai-immer';
-import { Fragment, useEffect, useRef, useState } from "react";
-import { EditorCodeMirror, ViewerCodeMirror } from "./CodeMirrorComponents";
-
+import { useImmerAtom } from "jotai-immer";
+import { useEffect, useMemo, useRef, useState } from "react";
+import ViewerFragment from "./ViewerFragment";
+import { ManualEditor } from "./ManualEditor";
 
 export default function ComputationsFileEditor({ fetchFileSystem }) {
   const serverAddress = "http://localhost:3330";
   const [blockPath] = useAtom(blockEditorRootAtom);
-  const relPath = blockPath.replaceAll('\\', '/')
+  const relPath = blockPath.replaceAll("\\", "/");
   const blockFolderName = relPath.split("/").pop();
   const [openAIApiKey] = useAtom(openAIApiKeyAtom);
   const [pipeline, setPipeline] = useImmerAtom(pipelineAtom);
   const [editor] = useAtom(drawflowEditorAtom);
-  const [,setCompilationErrorToast] = useAtom(compilationErrorToastAtom)
+  const [, setCompilationErrorToast] = useAtom(compilationErrorToastAtom);
 
   const [agentName, setAgent] = useState("gpt-4_python_compute");
 
@@ -41,21 +31,25 @@ export default function ComputationsFileEditor({ fetchFileSystem }) {
   const [isLoading, setIsLoading] = useState(false);
   const chatTextarea = useRef(null);
   const panel = useRef(null);
+  const editorRef = useRef(null);
 
   const utils = trpc.useUtils();
   const compileComputation = trpc.compileComputation.useMutation();
   const saveBlockSpecs = trpc.saveBlockSpecs.useMutation();
   const history = trpc.chat.history.get.useQuery({ blockPath });
+  const historyData = history?.data ?? [];
   const updateHistory = trpc.chat.history.update.useMutation({
     onSuccess(input) {
-      utils.chat.history.get.invalidate({ blockPath })
-    }
+      utils.chat.history.get.invalidate({ blockPath });
+    },
   });
+
   const index = trpc.chat.index.get.useQuery({ blockPath });
+  const indexData = index?.data ?? [];
   const updateIndex = trpc.chat.index.update.useMutation({
     onSuccess(input) {
-      utils.chat.index.get.invalidate({ blockPath })
-    }
+      utils.chat.index.get.invalidate({ blockPath });
+    },
   });
 
   useEffect(() => {
@@ -90,13 +84,9 @@ export default function ComputationsFileEditor({ fetchFileSystem }) {
           timestamp: Date.now(),
           prompt: promptToRecord,
           response: codeToRecord,
-        }
-      ]
-    })
-  };
-
-  const handleEditorChange = (value) => {
-    setEditorValue(value);
+        },
+      ],
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -108,7 +98,7 @@ export default function ComputationsFileEditor({ fetchFileSystem }) {
       userMessage: newPrompt,
       agentName: agentName,
       conversationHistory: history.data,
-      apiKey: openAIApiKey
+      apiKey: openAIApiKey,
     };
 
     if (newPrompt) {
@@ -138,16 +128,22 @@ export default function ComputationsFileEditor({ fetchFileSystem }) {
     setIsLoading(false);
   };
 
-  const handleSave = (e) => {
+  useEffect(() => {
+    if (editorRef.current) {
+      setTimeout(() => {
+        editorRef.current.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 200);
+    }
+  }, [showEditor]);
+
+  const handleSave = (value) => {
     if (editorManualPrompt) {
-      recordCode(editorManualPrompt, editorValue);
+      recordCode(editorManualPrompt, value);
     }
     setShowEditor(false);
-    if (panel.current) {
-      setTimeout(() => {
-        panel.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      }, 100);
-    }
   };
 
   const handleEdit = (index) => {
@@ -156,16 +152,9 @@ export default function ComputationsFileEditor({ fetchFileSystem }) {
       setEditorManualPrompt("Manual edit of code #" + index);
       setShowEditor(true);
     }
-
-    if (panel.current) {
-      setTimeout(() => {
-        panel.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      }, 100);
-    }
   };
 
   const handleGenerate = async (index) => {
-
     let code_content = history.data[index].response;
 
     const requestBody = JSON.stringify({
@@ -174,7 +163,7 @@ export default function ComputationsFileEditor({ fetchFileSystem }) {
       agent_name: agentName,
       blockPath: blockPath,
       computations_script: code_content,
-      chatHistoryIndex: index
+      chatHistoryIndex: index,
     });
 
     try {
@@ -194,123 +183,118 @@ export default function ComputationsFileEditor({ fetchFileSystem }) {
     }
 
     try {
-      const newSpecsIO = await compileComputation.mutateAsync({ blockPath: blockPath });
-      const newSpecs = await updateSpecs(blockFolderName, newSpecsIO, pipeline.data, editor);
+      const newSpecsIO = await compileComputation.mutateAsync({
+        blockPath: blockPath,
+      });
+      const newSpecs = await updateSpecs(
+        blockFolderName,
+        newSpecsIO,
+        pipeline.data,
+        editor,
+      );
       setPipeline((draft) => {
         draft.data[blockFolderName] = newSpecs;
-      })
-      await saveBlockSpecs.mutateAsync({ blockPath: blockPath, blockSpecs: newSpecs });
+      });
+      await saveBlockSpecs.mutateAsync({
+        blockPath: blockPath,
+        blockSpecs: newSpecs,
+      });
     } catch (error) {
-      console.error(error)
+      console.error(error);
       setCompilationErrorToast(true);
     }
 
     updateIndex.mutateAsync({
       blockPath: blockPath,
-      index: index
-    })
+      index: index,
+    });
 
     fetchFileSystem();
   };
 
-  return (
-    <div ref={panel} className="flex flex-col gap-y-12">
-      {history.isSuccess & index.isSuccess && history.data.map((item, i) => (
-        <Fragment key={i}>
-          <span className="block-editor-prompt">
-            {item.prompt}
-          </span>
-          <div>
-            <div className="flex items-center mb-4">
-              <RadioButton
-                checked={index.data === i}
-                onChange={() => handleGenerate(i)}
-                labelText={`Select Code #${i}`}
-              />
-            </div>
-            <div
-              className="relative"
-              style={{
-                border:
-                  index.data === i
-                    ? "2px solid darkorange"
-                    : "none",
-              }}
-            >
-              <ViewerCodeMirror
-                code={item.response}
-              />
-              <div className="absolute right-4 top-4">
-                <Button
-                  renderIcon={Edit}
-                  iconDescription="Edit Code"
-                  tooltipPosition="top"
-                  hasIconOnly
-                  size="md"
-                  onClick={() => handleEdit(i)}
-                />
-              </div>
-            </div>
-          </div>
-        </Fragment>
-      ))}
-      {showEditor ? (
-        <div>
-          <div>{editorManualPrompt}</div>
+  const fragments = useMemo(() => {
+    let fragmentArray = [];
+    fragmentArray = historyData.map((item, i) => {
+      const code = item?.response ?? "";
+      const prompt = item?.prompt ?? "";
+      return (
+        <ViewerFragment
+          key={i}
+          currentIndex={i}
+          code={code}
+          prompt={prompt}
+          selectedIndex={indexData}
+          handleGenerate={handleGenerate}
+          handleEdit={handleEdit}
+        />
+      );
+    });
+    return fragmentArray;
+  }, [historyData, indexData]);
+
+  let editorComponent = null;
+  if (showEditor) {
+    editorComponent = (
+      <ManualEditor
+        updatedCode={editorValue}
+        handleSave={handleSave}
+        editorManualPrompt={editorManualPrompt}
+        editorRef={editorRef}
+      />
+    );
+  } else {
+    editorComponent = (
+      <div ref={editorRef}>
+        {openAIApiKey && (
           <div className="relative">
-            <EditorCodeMirror
-              code={editorValue}
-              onChange={handleEditorChange}
-            />
-            <div className="absolute right-4 top-4">
-              <Button
-                renderIcon={Save}
-                iconDescription="Save code"
-                tooltipPosition="left"
-                hasIconOnly
-                size="md"
-                onClick={handleSave}
+            <div className="text-right">
+              <div className="inline-block p-2">
+                <Bot size={24} className="align-middle" />
+                <span className="text-md align-middle">{agentName}</span>
+              </div>
+              <textarea
+                className="block-editor-prompt-input w-full resize-none p-2"
+                ref={chatTextarea}
+                placeholder="Ask to generate code or modify last code"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
               />
             </div>
-          </div>
-        </div>
-      ) : (
-        <>
-            {openAIApiKey &&
-              <div className="relative">
-                <div className="text-right">
-                  <div className="inline-block p-2">
-                    <Bot size={24} className="align-middle" />
-                    <span className="text-md align-middle">{agentName}</span>
-                  </div>
-                  <textarea
-                    className="w-full p-2 block-editor-prompt-input resize-none"
-                    ref={chatTextarea}
-                    placeholder="Ask to generate code or modify last code"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSubmit(e);
-                      }
-                    }}
+
+            <div className="absolute bottom-2 right-1">
+              {isLoading ? (
+                <div className="prompt-spinner">
+                  <Loading
+                    active={true}
+                    description="Sending..."
+                    withOverlay={false}
                   />
                 </div>
-
-                <div className="absolute bottom-2 right-1">
-                  {isLoading ? (
-                    <div className='prompt-spinner'>
-                      <Loading active={true} description="Sending..." withOverlay={false} />
-                    </div>
-                  ) : (
-                    <IconButton iconDescription="Send Prompt" label="Send Prompt" kind='ghost' onClick={handleSubmit}>
-                        <SendFilled size={24} />
-                    </IconButton>
-                  )}
-                </div>
+              ) : (
+                <IconButton
+                  iconDescription="Send Prompt"
+                  label="Send Prompt"
+                  kind="ghost"
+                  onClick={handleSubmit}
+                >
+                  <SendFilled size={24} />
+                </IconButton>
+              )}
             </div>
-            }
-        </>
-      )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-y-12">
+      {fragments}
+      {editorComponent}
     </div>
   );
 }
